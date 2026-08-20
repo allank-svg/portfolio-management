@@ -23,7 +23,7 @@ def get_quotes(symbols):
     try:
         # This is a placeholder - in production, call the Robinhood API
         # For now, return cached data from the last refresh
-        cache_file = "/home/claude/dash/quote_cache.json"
+        cache_file = "quote_cache.json"
         if os.path.exists(cache_file):
             with open(cache_file, "r") as f:
                 return json.load(f)
@@ -234,7 +234,7 @@ def api_portfolio_today():
  
     # Load quotes
     try:
-        with open("/home/claude/dash/quote_cache.json", "r") as f:
+        with open("quote_cache.json", "r") as f:
             quotes = json.load(f)
     except:
         quotes = {}
@@ -277,7 +277,7 @@ def api_trade_decisions():
  
     # Load data
     try:
-        with open("/home/claude/dash/quote_cache.json", "r") as f:
+        with open("quote_cache.json", "r") as f:
             quotes = json.load(f)
     except:
         quotes = {}
