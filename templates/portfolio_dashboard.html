@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fundamental Portfolio — Daily Research & Execution</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg2: #151b23;
+            --bg3: #1c232c;
+            --line: #2a333f;
+            --tx: #e6edf3;
+            --tx2: #9fb0c3;
+            --tx3: #6b7d91;
+            --up: #3fb98f;
+            --dn: #e05563;
+            --buy: #2ea043;
+            --sell: #da3633;
+            --hold: #c99a3d;
+            --accent: #5b9dd9;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--tx);
+            font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .wrap { max-width: 1600px; margin: 0 auto; padding: 0 24px; }
+
+        header {
+            border-bottom: 1px solid var(--line);
+            background: linear-gradient(180deg, #111820, #0d1117);
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        header .wrap {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        p {
+            margin: 4px 0 0;
+            color: var(--tx3);
+            font-size: 12px;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .btn:hover { background: #6ca8e8; }
+        .btn.sell { background: var(--sell); }
+        .btn.sell:hover { background: #e63946; }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--line);
+            background: var(--bg2);
+            position: sticky;
+            top: 76px;
+            z-index: 999;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: var(--tx3);
+            border: none;
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover { color: var(--tx2); background: var(--bg3); }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        .content { padding: 24px 0 40px; }
+        .section { display: none; }
+        .section.active { display: block; }
+
+        /* KPIs */
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .kpi {
+            background: var(--bg3);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .kpi-label { font-size: 11px; color: var(--tx3); text-transform: uppercase; margin-bottom: 6px; }
+        .kpi-value { font-size: 20px; font-weight: 600; margin-bottom: 2px; }
+        .kpi-value.up { color: var(--up); }
+        .kpi-value.dn { color: var(--dn); }
+        .kpi-note { font-size: 11px; color: var(--tx2); }
+
+        /* Cards */
+        .card {
+            background: var(--bg3);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--tx3);
+            margin-bottom: 12px;
+        }
+
+        /* Action Items */
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .action-card {
+            background: var(--bg3);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px;
+            border-left: 4px solid var(--line);
+        }
+
+        .action-card.buy { border-left-color: var(--buy); background: linear-gradient(90deg, rgba(46, 160, 67, 0.1), transparent); }
+        .action-card.sell { border-left-color: var(--sell); background: linear-gradient(90deg, rgba(218, 54, 51, 0.1), transparent); }
+
+        .action-symbol {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+
+        .action-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .action-badge.buy { background: var(--buy); color: white; }
+        .action-badge.sell { background: var(--sell); color: white; }
+
+        .action-score {
+            font-size: 12px;
+            color: var(--tx2);
+            background: var(--bg2);
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .action-reason {
+            font-size: 12px;
+            color: var(--tx2);
+            line-height: 1.5;
+        }
+
+        /* Table */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg3);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .table thead {
+            background: var(--bg2);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .table th {
+            padding: 10px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--tx3);
+            text-transform: uppercase;
+        }
+
+        .table td {
+            padding: 10px;
+            border-top: 1px solid var(--line);
+            font-size: 12px;
+        }
+
+        .table tbody tr:hover { background: #1c232c; }
+
+        .ticker { font-family: monospace; font-weight: 600; color: var(--accent); }
+        .num { text-align: right; font-family: monospace; }
+        .num.up { color: var(--up); }
+        .num.dn { color: var(--dn); }
+
+        /* Research Section */
+        .research-header {
+            background: linear-gradient(135deg, var(--bg3), var(--bg2));
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .research-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        .summary-item {
+            text-align: center;
+            padding: 12px;
+            background: var(--bg2);
+            border-radius: 6px;
+        }
+
+        .summary-count {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .summary-label {
+            font-size: 11px;
+            color: var(--tx3);
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+
+        .summary-item.buy .summary-count { color: var(--buy); }
+        .summary-item.sell .summary-count { color: var(--sell); }
+        .summary-item.hold .summary-count { color: var(--hold); }
+
+        /* Info Box */
+        .info-box {
+            background: linear-gradient(135deg, rgba(31, 111, 235, 0.1), rgba(31, 111, 235, 0.05));
+            border: 1px solid rgba(31, 111, 235, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            font-size: 13px;
+            color: var(--tx2);
+            line-height: 1.6;
+        }
+
+        .info-box strong { color: var(--tx); }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="wrap">
+        <div>
+            <h1>Fundamental Portfolio Manager</h1>
+            <p>Daily exhaustive research → Automated execution</p>
+        </div>
+        <div class="header-right">
+            <button class="btn" onclick="refreshAllData()">Refresh</button>
+            <button class="btn sell" onclick="window.location.href='/logout'">Logout</button>
+        </div>
+    </div>
+</header>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('portfolio')">Portfolio Today</button>
+    <button class="tab-btn" onclick="switchTab('research')">Daily Research</button>
+    <button class="tab-btn" onclick="switchTab('market')">Market Overview</button>
+    <button class="tab-btn" onclick="switchTab('config')">Configuration</button>
+    <button class="tab-btn" onclick="switchTab('history')">Trade History</button>
+</div>
+
+<div class="content">
+
+<!-- ==================== PORTFOLIO TODAY ==================== -->
+<div id="portfolio" class="section active">
+    <div class="wrap">
+
+        <!-- KPIs -->
+        <div class="kpis" id="kpis-row"></div>
+
+        <!-- Action Items -->
+        <h2>Today's Action Items (Research-Driven)</h2>
+        <div class="action-grid" id="actions-grid"></div>
+
+        <!-- Recommendation Changes -->
+        <h2>Recommendation Changes from Yesterday</h2>
+        <div id="changes-container" style="margin-bottom: 24px;"></div>
+
+        <!-- Current Holdings -->
+        <h2>Current Holdings & Performance</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Qty</th>
+                    <th>Avg Cost</th>
+                    <th>Current</th>
+                    <th>Position Value</th>
+                    <th>Today</th>
+                    <th>Total Return</th>
+                </tr>
+            </thead>
+            <tbody id="positions-tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ==================== DAILY RESEARCH ==================== -->
+<div id="research" class="section">
+    <div class="wrap">
+
+        <div class="info-box">
+            <strong>Daily Research Process:</strong> Exhaustive fundamental analysis of all holdings + opportunity universe. Scored on earnings quality, valuation opportunity, institutional positioning, and thesis health. Top 20 = candidates. Top 10 = portfolio recommendations (BUY/HOLD/SELL).
+        </div>
+
+        <div class="research-header">
+            <div class="research-summary" id="research-summary">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <h2>Top 10 Recommendations (Portfolio Targets)</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Score</th>
+                    <th>Recommendation</th>
+                    <th>Current Price</th>
+                    <th>Fair Value</th>
+                    <th>Upside to Fair</th>
+                    <th>Earnings Quality</th>
+                    <th>Valuation</th>
+                </tr>
+            </thead>
+            <tbody id="research-tbody"></tbody>
+        </table>
+
+        <h2 style="margin-top: 32px;">Top 20 Candidates (Next Tier)</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Score</th>
+                    <th>Current Price</th>
+                    <th>Fair Value</th>
+                    <th>Upside</th>
+                </tr>
+            </thead>
+            <tbody id="candidates-tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ==================== MARKET OVERVIEW ==================== -->
+<div id="market" class="section">
+    <div class="wrap">
+
+        <div class="info-box">
+            <strong>Market & Economy Monitor:</strong> Daily view of macro backdrop. Shows market breadth, sector rotation, economic conditions, and how they relate to your portfolio positioning. Use this to understand whether market environment supports or opposes your thesis.
+        </div>
+
+        <!-- Market Indices -->
+        <h2>Market Indices & Breadth</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px;">
+            <div class="card">
+                <div class="card-title">S&P 500</div>
+                <div style="font-size: 24px; font-weight: 600; color: var(--up); margin: 8px 0;">5,832.45</div>
+                <div style="font-size: 12px; color: var(--tx2);">+0.85% today | +18.2% YTD</div>
+            </div>
+            <div class="card">
+                <div class="card-title">NASDAQ 100</div>
+                <div style="font-size: 24px; font-weight: 600; color: var(--up); margin: 8px 0;">20,412.10</div>
+                <div style="font-size: 12px; color: var(--tx2);">+1.22% today | +22.5% YTD</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Russell 2000</div>
+                <div style="font-size: 24px; font-weight: 600; color: var(--dn); margin: 8px 0;">2,045.33</div>
+                <div style="font-size: 12px; color: var(--tx2);">-0.42% today | +8.1% YTD</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Market Breadth</div>
+                <div style="font-size: 24px; font-weight: 600; color: var(--up); margin: 8px 0;">67%</div>
+                <div style="font-size: 12px; color: var(--tx2);">Advancers/Decliners (Healthy: >55%)</div>
+            </div>
+        </div>
+
+        <!-- Sector Performance -->
+        <h2>Sector Rotation (YTD Performance)</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Sector</th>
+                    <th>YTD Return</th>
+                    <th>Today</th>
+                    <th>Status</th>
+                    <th>Your Portfolio Exposure</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Technology</strong></td>
+                    <td class="num up">+28.5%</td>
+                    <td class="num up">+1.5%</td>
+                    <td><span style="color: var(--up); font-weight: 600;">LEADING</span></td>
+                    <td><span style="background: rgba(63, 185, 143, 0.2); padding: 4px 8px; border-radius: 4px; color: var(--up); font-size: 11px;">60% - OVERWEIGHT</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Semiconductors</strong></td>
+                    <td class="num up">+35.2%</td>
+                    <td class="num up">+2.1%</td>
+                    <td><span style="color: var(--up); font-weight: 600;">LEADING</span></td>
+                    <td><span style="background: rgba(63, 185, 143, 0.2); padding: 4px 8px; border-radius: 4px; color: var(--up); font-size: 11px;">40% - OVERWEIGHT</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Financials</strong></td>
+                    <td class="num up">+12.3%</td>
+                    <td class="num dn">-0.3%</td>
+                    <td><span style="color: var(--hold); font-weight: 600;">LAGGING</span></td>
+                    <td><span style="background: rgba(201, 154, 61, 0.2); padding: 4px 8px; border-radius: 4px; color: var(--hold); font-size: 11px;">0% - UNDERWEIGHT</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Materials/Mining</strong></td>
+                    <td class="num up">+8.5%</td>
+                    <td class="num up">+0.8%</td>
+                    <td><span style="color: var(--hold); font-weight: 600;">STEADY</span></td>
+                    <td><span style="background: rgba(201, 154, 61, 0.2); padding: 4px 8px; border-radius: 4px; color: var(--hold); font-size: 11px;">20% - NEUTRAL</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Economic Context -->
+        <h2 style="margin-top: 32px;">Economic Backdrop</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;">
+            <div class="card">
+                <div class="card-title">10Y Yield</div>
+                <div style="font-size: 20px; font-weight: 600; color: var(--tx); margin: 8px 0;">4.25%</div>
+                <div style="font-size: 11px; color: var(--tx3); margin-bottom: 8px;">Last week: 4.18%</div>
+                <div style="font-size: 12px; color: var(--tx2);"><strong>Impact:</strong> Rising yields = headwind for growth stocks, tailwind for financial stocks</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Fed Funds Rate</div>
+                <div style="font-size: 20px; font-weight: 600; color: var(--tx); margin: 8px 0;">4.50%</div>
+                <div style="font-size: 11px; color: var(--tx3); margin-bottom: 8px;">Status: On Hold</div>
+                <div style="font-size: 12px; color: var(--tx2);"><strong>Impact:</strong> No change expected near-term. Market pricing 1-2 cuts in 2026H2</div>
+            </div>
+            <div class="card">
+                <div class="card-title">VIX (Volatility)</div>
+                <div style="font-size: 20px; font-weight: 600; color: var(--up); margin: 8px 0;">14.2</div>
+                <div style="font-size: 11px; color: var(--tx3); margin-bottom: 8px;">52-week range: 12-28</div>
+                <div style="font-size: 12px; color: var(--tx2);"><strong>Impact:</strong> Complacency - market not pricing tail risk</div>
+            </div>
+            <div class="card">
+                <div class="card-title">GDP Growth Expectations</div>
+                <div style="font-size: 20px; font-weight: 600; color: var(--tx); margin: 8px 0;">2.4%</div>
+                <div style="font-size: 11px; color: var(--tx3); margin-bottom: 8px;">2026 Consensus estimate</div>
+                <div style="font-size: 12px; color: var(--tx2);"><strong>Impact:</strong> Moderate growth supports corporate earnings</div>
+            </div>
+        </div>
+
+        <!-- Research & Institutional Analysis -->
+        <h2 style="margin-top: 32px;">Institutional Equity Research</h2>
+        <iframe id="research-iframe" style="width: 100%; height: 800px; border: 1px solid var(--line); border-radius: 8px;" src="/research"></iframe>
+    </div>
+</div>
+
+<!-- ==================== CONFIGURATION ==================== -->
+<div id="config" class="section">
+    <div class="wrap">
+
+        <div class="info-box">
+            <strong>Trading Guardrails:</strong> Set your daily limits and approval thresholds. I execute trades within these guardrails automatically based on daily research. Trades outside limits require your approval via email + app notification.
+        </div>
+
+        <div class="card" style="max-width: 600px;">
+            <div class="card-title">Trading Configuration</div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Max Buy Per Stock Per Day ($)</strong>
+                </label>
+                <input type="number" id="max-buy" placeholder="50000" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Max Sell Per Stock Per Day ($)</strong>
+                </label>
+                <input type="number" id="max-sell" placeholder="50000" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Approval Threshold - Buy ($)</strong>
+                </label>
+                <input type="number" id="approval-buy" placeholder="100000" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+                <div style="font-size: 11px; color: var(--tx3); margin-top: 4px;">Buys above this amount require your approval</div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Approval Threshold - Sell ($)</strong>
+                </label>
+                <input type="number" id="approval-sell" placeholder="100000" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+                <div style="font-size: 11px; color: var(--tx3); margin-top: 4px;">Sells above this amount require your approval</div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Max Position Concentration (%)</strong>
+                </label>
+                <input type="number" id="max-concentration" placeholder="20" min="1" max="100" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+                <div style="font-size: 11px; color: var(--tx3); margin-top: 4px;">No single position can exceed this % of portfolio</div>
+            </div>
+
+            <button class="btn" onclick="saveConfiguration()" style="width: 100%; padding: 12px;">Save Configuration</button>
+        </div>
+
+        <div id="config-status" style="margin-top: 12px; font-size: 12px; color: var(--tx3);"></div>
+    </div>
+</div>
+
+<!-- ==================== TRADE HISTORY ==================== -->
+<div id="history" class="section">
+    <div class="wrap">
+
+        <h2>Trade Execution History</h2>
+        <div class="info-box">
+            All trades executed with fundamental reasoning logged. Shows which research signal drove each trade decision.
+        </div>
+
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Symbol</th>
+                    <th>Action</th>
+                    <th>Amount</th>
+                    <th>Research Score</th>
+                    <th>Fundamental Reason</th>
+                </tr>
+            </thead>
+            <tbody id="history-tbody">
+                <tr>
+                    <td colspan="6" style="text-align: center; color: var(--tx3);">No trades yet (coming from daily research)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+</div>
+
+<script>
+function switchTab(tabName) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(tabName).classList.add('active');
+    event.target.classList.add('active');
+}
+
+async function refreshAllData() {
+    const portfolio = await fetch('/api/portfolio-today').then(r => r.json());
+    const research = await fetch('/api/research').then(r => r.json());
+
+    renderPortfolioToday(portfolio);
+    renderResearch(research);
+    loadConfiguration();
+}
+
+function renderPortfolioToday(data) {
+    // KPIs
+    const kpis = data.portfolio.kpis;
+    const kpiHtml = `
+        <div class="kpi">
+            <div class="kpi-label">Account Value</div>
+            <div class="kpi-value">$${(kpis.account_value / 1000).toFixed(1)}k</div>
+            <div class="kpi-note">Equity + Cash</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Unrealized P&L</div>
+            <div class="kpi-value ${kpis.unrealized_pl_pct >= 0 ? 'up' : 'dn'}">${kpis.unrealized_pl_pct >= 0 ? '+' : ''}${kpis.unrealized_pl_pct.toFixed(1)}%</div>
+            <div class="kpi-note">$${kpis.unrealized_pl.toLocaleString('en-US', {maximumFractionDigits: 0})}</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Today's P&L</div>
+            <div class="kpi-value ${kpis.today_pl >= 0 ? 'up' : 'dn'}">${kpis.today_pl >= 0 ? '+' : ''}$${kpis.today_pl.toFixed(0)}</div>
+            <div class="kpi-note">${data.portfolio.timestamp}</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Positions</div>
+            <div class="kpi-value">${kpis.num_positions}</div>
+            <div class="kpi-note">Active holdings</div>
+        </div>
+    `;
+    document.getElementById('kpis-row').innerHTML = kpiHtml;
+
+    // Action Items
+    const actionHtml = data.action_items.map(a => `
+        <div class="action-card ${a.type.toLowerCase()}">
+            <div class="action-symbol">${a.symbol}</div>
+            <span class="action-badge ${a.type.toLowerCase()}">${a.type}</span>
+            <div class="action-score">Research Score: <strong>${a.fair_value ? 'Fair: $' + a.fair_value.toFixed(0) : 'N/A'}</strong></div>
+            <div class="action-reason">${a.reason}</div>
+            <div style="margin-top: 8px; font-size: 11px; color: var(--tx3);">
+                Current: $${a.current_price.toFixed(2)} | Upside: ${a.upside ? (a.upside > 0 ? '+' : '') + a.upside.toFixed(1) + '%' : 'N/A'}
+            </div>
+        </div>
+    `).join('');
+    document.getElementById('actions-grid').innerHTML = actionHtml;
+
+    // Recommendation Changes
+    const changesHtml = data.recommendation_changes.map(c => `
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 16px; font-weight: 600; color: var(--accent);">${c.symbol}</div>
+                <div style="font-size: 12px; color: var(--tx3);">${c.change}</div>
+            </div>
+            <div style="margin-top: 8px; font-size: 12px; color: var(--tx2);">
+                ${c.yesterday ? 'Yesterday: ' + c.yesterday : ''} → ${c.today ? 'Today: ' + c.today : ''}<br>
+                ${c.reason}
+            </div>
+        </div>
+    `).join('');
+    document.getElementById('changes-container').innerHTML = changesHtml || '<p style="color: var(--tx3); font-size: 12px;">No recommendation changes from yesterday.</p>';
+
+    // Positions
+    const posHtml = data.portfolio.positions.map(p => `
+        <tr>
+            <td><span class="ticker">${p.symbol}</span></td>
+            <td class="num">${p.qty.toFixed(3)}</td>
+            <td class="num">$${p.avg_cost.toFixed(2)}</td>
+            <td class="num">$${p.current_price.toFixed(2)}</td>
+            <td class="num">$${p.position_value.toLocaleString('en-US', {maximumFractionDigits: 0})}</td>
+            <td class="num ${p.today_pl_pct >= 0 ? 'up' : 'dn'}">${p.today_pl_pct >= 0 ? '+' : ''}${p.today_pl_pct.toFixed(2)}%</td>
+            <td class="num ${p.unrealized_pl_pct >= 0 ? 'up' : 'dn'}">${p.unrealized_pl_pct >= 0 ? '+' : ''}${p.unrealized_pl_pct.toFixed(1)}%</td>
+        </tr>
+    `).join('');
+    document.getElementById('positions-tbody').innerHTML = posHtml;
+}
+
+function renderResearch(data) {
+    // Summary
+    const summary = data.summary;
+    const summaryHtml = `
+        <div class="summary-item">
+            <div class="summary-count">${summary.total_scored}</div>
+            <div class="summary-label">Total Scored</div>
+        </div>
+        <div class="summary-item buy">
+            <div class="summary-count">${summary.buy_count}</div>
+            <div class="summary-label">BUY Signals</div>
+        </div>
+        <div class="summary-item hold">
+            <div class="summary-count">${summary.hold_count}</div>
+            <div class="summary-label">HOLD</div>
+        </div>
+        <div class="summary-item sell">
+            <div class="summary-count">${summary.sell_count}</div>
+            <div class="summary-label">SELL Signals</div>
+        </div>
+    `;
+    document.getElementById('research-summary').innerHTML = summaryHtml;
+
+    // Top 10
+    const topHtml = data.top_10_recommendations.map(r => `
+        <tr>
+            <td><span class="ticker">${r.symbol}</span></td>
+            <td class="num"><strong>${r.score.toFixed(0)}</strong></td>
+            <td><span style="padding: 2px 8px; border-radius: 3px; background: var(--bg2); color: ${r.recommendation === 'BUY' ? 'var(--buy)' : r.recommendation === 'SELL' ? 'var(--sell)' : 'var(--hold)'}; font-weight: 600; font-size: 11px;">${r.recommendation}</span></td>
+            <td class="num">$${r.current_price.toFixed(2)}</td>
+            <td class="num">$${r.fair_value.toFixed(0)}</td>
+            <td class="num ${r.upside_to_fair >= 0 ? 'up' : 'dn'}">${r.upside_to_fair >= 0 ? '+' : ''}${r.upside_to_fair.toFixed(1)}%</td>
+            <td style="font-size: 11px;">${(r.revenue_growth * 100).toFixed(1)}%</td>
+            <td style="font-size: 11px;">${r.pe_multiple.toFixed(1)}x</td>
+        </tr>
+    `).join('');
+    document.getElementById('research-tbody').innerHTML = topHtml;
+
+    // Top 20
+    const candHtml = data.top_20_candidates.map(r => `
+        <tr>
+            <td><span class="ticker">${r.symbol}</span></td>
+            <td class="num">${r.score.toFixed(0)}</td>
+            <td class="num">$${r.current_price.toFixed(2)}</td>
+            <td class="num">$${r.fair_value.toFixed(0)}</td>
+            <td class="num ${r.upside_to_fair >= 0 ? 'up' : 'dn'}">${r.upside_to_fair >= 0 ? '+' : ''}${r.upside_to_fair.toFixed(1)}%</td>
+        </tr>
+    `).join('');
+    document.getElementById('candidates-tbody').innerHTML = candHtml;
+}
+
+async function loadConfiguration() {
+    const config = await fetch('/api/trade-config').then(r => r.json());
+    document.getElementById('max-buy').value = config.max_buy_per_stock_per_day;
+    document.getElementById('max-sell').value = config.max_sell_per_stock_per_day;
+    document.getElementById('approval-buy').value = config.approval_threshold_buy;
+    document.getElementById('approval-sell').value = config.approval_threshold_sell;
+    document.getElementById('max-concentration').value = (config.max_portfolio_concentration * 100).toFixed(0);
+}
+
+async function saveConfiguration() {
+    const config = {
+        max_buy_per_stock_per_day: parseFloat(document.getElementById('max-buy').value),
+        max_sell_per_stock_per_day: parseFloat(document.getElementById('max-sell').value),
+        approval_threshold_buy: parseFloat(document.getElementById('approval-buy').value),
+        approval_threshold_sell: parseFloat(document.getElementById('approval-sell').value),
+        max_portfolio_concentration: parseFloat(document.getElementById('max-concentration').value) / 100
+    };
+
+    const result = await fetch('/api/trade-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+    }).then(r => r.json());
+
+    document.getElementById('config-status').textContent = '✓ Configuration saved at ' + new Date().toLocaleTimeString();
+}
+
+refreshAllData();
+setInterval(refreshAllData, 300000); // Refresh every 5 minutes
+</script>
+
+</body>
+</html>
