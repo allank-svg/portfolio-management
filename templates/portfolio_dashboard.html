@@ -655,6 +655,54 @@
             <button class="btn" onclick="saveConfiguration()" style="width: 100%; padding: 12px;">Save Configuration</button>
         </div>
 
+        <div class="card" style="max-width: 600px;">
+            <div class="card-title">Acquisition & Rebalancing Settings</div>
+            <div class="info-box" style="margin-bottom: 16px;">
+                Controls the automatic acquisition of new stocks and rebalancing of weak positions. These trades still go through the same daily limits and approval thresholds above.
+            </div>
+
+            <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-size: 12px; color: var(--tx3);"><strong>Auto-Buy New Acquisitions</strong></label>
+                <input type="checkbox" id="auto-buy-acq" style="width: 18px; height: 18px;">
+            </div>
+
+            <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-size: 12px; color: var(--tx3);"><strong>Auto-Rebalance (sell weak to fund new)</strong></label>
+                <input type="checkbox" id="auto-rebalance" style="width: 18px; height: 18px;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Minimum Cash Buffer ($)</strong>
+                </label>
+                <input type="number" id="min-cash-buffer" placeholder="2000" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+                <div style="font-size: 11px; color: var(--tx3); margin-top: 4px;">Always keep at least this much cash uninvested</div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Min Fundamental Score to Acquire (0-100)</strong>
+                </label>
+                <input type="number" id="acq-min-score" placeholder="60" min="0" max="100" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Min Upside to Fair Value (%)</strong>
+                </label>
+                <input type="number" id="acq-min-upside" placeholder="15" min="0" max="100" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--tx3); margin-bottom: 6px;">
+                    <strong>Rebalance Threshold (composite score below this = candidate to sell)</strong>
+                </label>
+                <input type="number" id="rebalance-threshold" placeholder="45" min="0" max="100" style="width: 100%; padding: 8px; background: var(--bg2); border: 1px solid var(--line); color: var(--tx); border-radius: 4px;">
+            </div>
+
+            <button class="btn" onclick="saveAcquisitionConfiguration()" style="width: 100%; padding: 12px;">Save Acquisition Settings</button>
+        </div>
+
         <div id="config-status" style="margin-top: 12px; font-size: 12px; color: var(--tx3);"></div>
     </div>
 </div>
@@ -845,6 +893,34 @@ async function loadConfiguration() {
     document.getElementById('approval-buy').value = config.approval_threshold_buy;
     document.getElementById('approval-sell').value = config.approval_threshold_sell;
     document.getElementById('max-concentration').value = (config.max_portfolio_concentration * 100).toFixed(0);
+
+    if (document.getElementById('auto-buy-acq')) {
+        document.getElementById('auto-buy-acq').checked = !!config.auto_buy_new_acquisitions;
+        document.getElementById('auto-rebalance').checked = !!config.auto_rebalance;
+        document.getElementById('min-cash-buffer').value = config.min_cash_buffer;
+        document.getElementById('acq-min-score').value = config.acquisition_min_fundamental_score;
+        document.getElementById('acq-min-upside').value = config.acquisition_min_upside ? (config.acquisition_min_upside * 100).toFixed(0) : '';
+        document.getElementById('rebalance-threshold').value = config.rebalance_threshold;
+    }
+}
+
+async function saveAcquisitionConfiguration() {
+    const config = {
+        auto_buy_new_acquisitions: document.getElementById('auto-buy-acq').checked,
+        auto_rebalance: document.getElementById('auto-rebalance').checked,
+        min_cash_buffer: parseFloat(document.getElementById('min-cash-buffer').value),
+        acquisition_min_fundamental_score: parseFloat(document.getElementById('acq-min-score').value),
+        acquisition_min_upside: parseFloat(document.getElementById('acq-min-upside').value) / 100,
+        rebalance_threshold: parseFloat(document.getElementById('rebalance-threshold').value)
+    };
+
+    await fetch('/api/trade-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+    }).then(r => r.json());
+
+    document.getElementById('config-status').textContent = '✓ Acquisition settings saved at ' + new Date().toLocaleTimeString();
 }
 
 async function saveConfiguration() {
