@@ -119,11 +119,10 @@ def score_holding(symbol, current_data, holdings_detailed):
         thesis_score -= 15  # Thesis weak if no FCF
         thesis_health = "WEAKENING"
  
-    # Check for cycle risk: old cycles often mean mean reversion imminent
-    # Example: MU with DRAM cycle 36 months old → margin compression risk
-    if "cycle" in str(h.get('bull_thesis', '')).lower() and "old" in str(h.get('bull_thesis', '')).lower():
-        thesis_score -= 10
-        thesis_health = "DETERIORATING"  # Cycle risk signals thesis break
+    # NOTE: Thesis health should only mark DETERIORATING if NEW negative news breaks
+    # (e.g., litigation escalation, guidance cut, major customer loss)
+    # Do NOT retroactively penalize known structural risks (e.g., old cycles, stretched margins)
+    # Those should already be factored into the fundamental score
  
     scores['thesis_quality'] = min(100, max(0, thesis_score))
  
