@@ -1,13 +1,14 @@
+
 #!/usr/bin/env python3
 """
 Portfolio Monitor - Hourly fundamental/macro break detector
 Runs 9:30am-4:30pm ET, weekdays. Checks Tier 1-3 sell rules.
 """
-
+ 
 import json
 import os
 from datetime import datetime
-
+ 
 # Holdings with thesis and key risk factors
 HOLDINGS = {
     "HALO": {
@@ -95,12 +96,12 @@ HOLDINGS = {
         "tier2_risks": ["supply chain disruption", "competitive loss"],
     },
 }
-
+ 
 def fetch_robinhood_quotes():
     """Fetch live quotes from Robinhood (would be called in production)"""
     # In production, use: from mcp__Robinhood__get_equity_quotes import get_equity_quotes
     # For now, return cached data
-    cache_file = "/home/claude/dash/quote_cache.json"
+    cache_file = "quote_cache.json"
     if os.path.exists(cache_file):
         try:
             with open(cache_file, "r") as f:
@@ -108,27 +109,27 @@ def fetch_robinhood_quotes():
         except:
             pass
     return {}
-
+ 
 def check_price_breach(symbol, last, avg_cost):
     """Check if stock is down >8% from cost basis (yellow alert)"""
     pct_change = 100 * (last - avg_cost) / avg_cost
     if pct_change <= -8:
         return True, pct_change
     return False, pct_change
-
+ 
 def generate_alerts():
     """Main monitoring logic - check all positions for Tier 1-3 breaks"""
     quotes = fetch_robinhood_quotes()
     alerts = []
     timestamp = datetime.now().strftime("%A %d %b %Y, %-I:%M %p ET")
-
+ 
     for symbol, holding in HOLDINGS.items():
         if symbol not in quotes:
             continue
-
+ 
         last = quotes[symbol].get("last", holding["avg_cost"])
         avg = holding["avg_cost"]
-
+ 
         # Tier 1: Price breach (>8% down from cost)
         breach, pct_change = check_price_breach(symbol, last, avg)
         if breach:
@@ -140,7 +141,7 @@ def generate_alerts():
                 "detail": f"Current: ${last:.2f}. Down {pct_change:.1f}%. Thesis: {holding['thesis']}",
                 "action": "Monitor for fundamental breaks. Thesis still valid?"
             })
-
+ 
         # Tier 1: Specific known risks (would check news/filings in production)
         # Example: MU + Netlist litigation
         if symbol == "MU" and last < avg * 0.92:
@@ -153,38 +154,37 @@ def generate_alerts():
                 "action": "Monitor for ruling date. Track competitive dynamics vs Samsung/SK Hynix.",
                 "date": "Ruling expected 2026 Q4"
             })
-
+ 
     # Tier 3: Macro regime check (in production, would fetch live macro data)
     # Example alerts based on macro thresholds
-
+ 
     return {
         "alerts": alerts,
         "timestamp": timestamp,
         "total_positions": len(HOLDINGS),
         "positions_with_alerts": len([a for a in alerts]),
     }
-
+ 
 def update_quote_cache(quotes):
     """Update local cache (in production, would commit to GitHub)"""
-    cache_file = "/home/claude/dash/quote_cache.json"
+    cache_file = "quote_cache.json"
     try:
-        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         with open(cache_file, "w") as f:
             json.dump(quotes, f)
         return True
     except:
         return False
-
+ 
 if __name__ == "__main__":
     # Run monitoring
     result = generate_alerts()
-
+ 
     # Print summary
     print(f"Monitor run: {result['timestamp']}")
     print(f"Positions checked: {result['total_positions']}")
     print(f"Alerts triggered: {result['positions_with_alerts']}")
     print()
-
+ 
     for alert in result['alerts']:
         print(f"[{alert['level'].upper()}] {alert['title']}")
         print(f"  Tier: {alert.get('tier', 'N/A')}")
@@ -193,8 +193,9 @@ if __name__ == "__main__":
         if 'date' in alert:
             print(f"  Date: {alert['date']}")
         print()
-
+ 
     # Return as JSON for scheduling system
     import sys
     print("\n--- JSON OUTPUT ---")
     print(json.dumps(result, indent=2))
+ 
