@@ -6,7 +6,7 @@ Pure fundamentals, no momentum/technicals
 
 import json
 from datetime import datetime, timedelta
-from portfolio_analyzer import HOLDINGS_DETAILED
+from portfolio_analyzer import HOLDINGS_DETAILED, get_acquisition_candidates
 
 # Scoring methodology
 SCORING_WEIGHTS = {
@@ -243,6 +243,9 @@ def generate_daily_research_report(current_data):
     holds = [s for s in top_10 if s['recommendation'] == 'HOLD']
     sells = [s for s in top_10 if s['recommendation'] == 'SELL']
 
+    # Get acquisition candidates (new opportunities)
+    acquisition_candidates = get_acquisition_candidates()
+
     return {
         'timestamp': datetime.now().strftime("%A %d %b %Y, %-I:%M %p ET"),
         'top_10_recommendations': top_10,
@@ -253,6 +256,7 @@ def generate_daily_research_report(current_data):
         'hold_signals': holds,                   # Thesis OK but not compelling
         'avoid_signals': avoids,                 # Momentum trap - avoid at any price
         'sell_signals': sells,                   # Thesis broken, exit position
+        'acquisition_candidates': acquisition_candidates,  # New opportunities to consider
         'summary': {
             'total_scored': len(all_scores),
             'strong_buy_count': len(strong_buys),
@@ -261,6 +265,7 @@ def generate_daily_research_report(current_data):
             'avoid_count': len(avoids),
             'hold_count': len(holds),
             'sell_count': len(sells),
+            'acquisition_candidates_count': len(acquisition_candidates),
         }
     }
 

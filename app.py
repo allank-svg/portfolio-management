@@ -21,7 +21,7 @@ def get_quotes(symbols):
     try:
         # This is a placeholder - in production, call the Robinhood API
         # For now, return cached data from the last refresh
-        cache_file = "quote_cache.json"
+        cache_file = "/home/claude/dash/quote_cache.json"
         if os.path.exists(cache_file):
             with open(cache_file, "r") as f:
                 return json.load(f)
@@ -232,7 +232,7 @@ def api_portfolio_today():
 
     # Load quotes
     try:
-        with open("quote_cache.json", "r") as f:
+        with open("/home/claude/dash/quote_cache.json", "r") as f:
             quotes = json.load(f)
     except:
         quotes = {}
@@ -275,7 +275,7 @@ def api_trade_decisions():
 
     # Load data
     try:
-        with open("quote_cache.json", "r") as f:
+        with open("/home/claude/dash/quote_cache.json", "r") as f:
             quotes = json.load(f)
     except:
         quotes = {}
@@ -315,6 +315,88 @@ def api_trade_decisions():
         "summary": {
             "auto_executed_count": len(executed),
             "pending_approval_count": len(pending)
+        }
+    })
+
+@app.route("/api/morning-research", methods=["GET"])
+def api_morning_research():
+    """API endpoint: Daily morning research workflow with auto-acquisitions & rebalancing"""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # Load quotes
+    try:
+        with open("quote_cache.json", "r") as f:
+            quotes = json.load(f)
+    except:
+        quotes = {}
+
+    # Get current portfolio
+    portfolio = get_portfolio_data()
+
+    # Run research
+    research = get_daily_research()
+
+    # Process acquisitions with auto-rebalancing
+    config = TradeConfig.load()
+    executor = TradeExecutor(config)
+
+    executed_acquisitions, pending_acquisitions, cash_alerts = executor.process_acquisitions_with_rebalancing(
+        research.get('acquisition_candidates', []),
+        portfolio,
+        research,
+        quotes
+    )
+
+    # Get existing trade recommendations
+    decisions = executor.generate_trade_decisions(research, portfolio, quotes)
+    executed_trades, pending_trades = executor.execute_trades(decisions, portfolio, quotes)
+
+    return jsonify({
+        'timestamp': research['timestamp'],
+        'research_summary': research['summary'],
+        'acquisitions_executed': [
+            {
+                'symbol': d.symbol,
+                'action': d.action,
+                'amount': d.amount,
+                'reason': d.reason,
+                'score': d.research_score
+            } for d in executed_acquisitions
+        ],
+        'acquisitions_pending': [
+            {
+                'symbol': d['symbol'],
+                'amount': d['amount'],
+                'score': d['score'],
+                'upside': d['upside'],
+                'reason': d['reason']
+            } for d in pending_acquisitions
+        ],
+        'trades_executed': [
+            {
+                'symbol': d.symbol,
+                'action': d.action,
+                'amount': d.amount,
+                'reason': d.reason,
+                'score': d.research_score
+            } for d in executed_trades
+        ],
+        'trades_pending_approval': [
+            {
+                'symbol': d.symbol,
+                'action': d.action,
+                'amount': d.amount,
+                'reason': d.reason,
+                'approval_reason': d.approval_reason
+            } for d in pending_trades
+        ],
+        'cash_alerts': cash_alerts,
+        'portfolio_updated': {
+            'account_value': portfolio['kpis']['account_value'],
+            'equity_value': portfolio['kpis']['equity_value'],
+            'cash': portfolio['kpis']['cash'],
+            'positions': len(portfolio['positions'])
         }
     })
 

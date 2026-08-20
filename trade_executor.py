@@ -2,11 +2,15 @@
 Trade Executor
 Executes trades based on fundamental research signals
 Respects user's configuration limits (max buy/sell per day, approval thresholds)
+Handles automatic acquisition of new stocks and portfolio rebalancing
 All trades logged with fundamental reasoning
 """
 
 import json
 from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 class TradeConfig:
     """User-settable trading parameters"""
@@ -18,6 +22,16 @@ class TradeConfig:
         self.max_portfolio_concentration = 0.20     # No single position > 20% of portfolio
         self.use_limit_orders = True                # Use limit orders, not market
         self.order_validity_days = 7                # Good-til-canceled for 7 days
+
+        # Acquisition & Rebalancing settings
+        self.auto_buy_new_acquisitions = True       # Auto-buy new stocks that meet criteria
+        self.min_cash_buffer = 2000                 # Keep minimum cash buffer
+        self.acquisition_min_fundamental_score = 60 # Min fundamentals score to auto-buy
+        self.acquisition_min_upside = 0.15          # Min 15% upside to fair value
+        self.auto_rebalance = True                  # Auto-sell weak positions for better opportunities
+        self.rebalance_threshold = 45               # Sell if composite score < this
+        self.email_on_acquisition = True            # Email notification on new buys
+        self.email_address = "allan@kginvest.net"   # Where to send notifications
 
     def to_dict(self):
         return {
@@ -269,6 +283,198 @@ class TradeExecutor:
         """User rejects a pending trade"""
         # Remove from pending, log as rejected
         pass
+
+    def evaluate_new_acquisitions(self, candidates, current_portfolio, portfolio_value):
+        """
+        Evaluate new acquisition candidates for automatic buying
+        Returns: (buy_recommendations, cash_needed, rebalance_suggestions)
+        """
+        buy_recommendations = []
+        cash_needed = 0
+        rebalance_suggestions = []
+
+        for candidate in candidates:
+            symbol = candidate['symbol']
+            upside = candidate.get('upside_pct', 0) / 100
+
+            # Check criteria
+            if upside < self.config.acquisition_min_upside:
+                continue  # Doesn't meet upside requirement
+
+            # Estimate score from upside and valuation
+            score = min(80, 50 + (upside * 100))  # Rough score from upside
+
+            if score < self.config.acquisition_min_fundamental_score:
+                continue  # Doesn't meet fundamental requirement
+
+            # Size: 2% of portfolio for new positions
+            buy_amount = portfolio_value * 0.02
+
+            buy_recommendations.append({
+                'symbol': symbol,
+                'amount': buy_amount,
+                'score': score,
+                'upside': upside * 100,
+                'reason': f"New acquisition: {candidate.get('thesis', '')}",
+                'fair_value': candidate.get('fair_value', 0),
+                'current_price': candidate.get('price', 0)
+            })
+
+            cash_needed += buy_amount
+
+        return buy_recommendations, cash_needed, rebalance_suggestions
+
+    def get_rebalance_candidates(self, portfolio, research_scores):
+        """
+        Find weak positions to sell to make room for better opportunities
+        Returns: list of positions to sell (lowest score first)
+        """
+        rebalance_candidates = []
+
+        for position in portfolio['positions']:
+            symbol = position['symbol']
+
+            # Find research score for this position
+            score = None
+            for rec in research_scores.get('top_10_recommendations', []):
+                if rec['symbol'] == symbol:
+                    score = rec['composite_score']
+                    break
+
+            if not score:
+                score = 50  # Default neutral score
+
+            # If score below threshold, consider for selling
+            if score < self.config.rebalance_threshold:
+                rebalance_candidates.append({
+                    'symbol': symbol,
+                    'value': position['position_value'],
+                    'score': score,
+                    'reason': f"Weak fundamentals ({score:.0f}/100), consider rebalancing"
+                })
+
+        # Sort by score (lowest first)
+        rebalance_candidates.sort(key=lambda x: x['score'])
+        return rebalance_candidates
+
+    def process_acquisitions_with_rebalancing(self, candidates, portfolio, research, current_quotes):
+        """
+        Main acquisition processor: evaluate new opportunities and auto-buy with rebalancing
+        Returns: (executed_acquisitions, pending_acquisitions, alerts)
+        """
+        executed = []
+        pending = []
+        alerts = []
+
+        portfolio_value = portfolio['kpis']['account_value']
+        current_cash = portfolio['kpis']['cash']
+
+        # Evaluate new acquisition candidates
+        buy_recs, cash_needed, rebalance = self.evaluate_new_acquisitions(
+            research.get('acquisition_candidates', []),
+            portfolio['positions'],
+            portfolio_value
+        )
+
+        for rec in buy_recs:
+            symbol = rec['symbol']
+            amount = rec['amount']
+
+            # Check if we have cash
+            if current_cash - self.config.min_cash_buffer >= amount:
+                # Auto-buy: we have cash
+                decision = TradeDecision(
+                    symbol=symbol,
+                    action='BUY',
+                    amount=amount,
+                    reason=rec['reason'],
+                    research_score=rec['score']
+                )
+                self._log_trade(decision)
+                executed.append(decision)
+                current_cash -= amount
+
+                # Send notification
+                self._send_notification(
+                    f"🎯 NEW ACQUISITION: {symbol}",
+                    f"Bought ${amount:,.0f} at ${rec['current_price']:.2f}\n"
+                    f"Fair Value: ${rec['fair_value']:.2f}\n"
+                    f"Upside: {rec['upside']:.1f}%"
+                )
+
+            else:
+                # Not enough cash - suggest rebalancing
+                rebalance_candidates = self.get_rebalance_candidates(portfolio, research)
+
+                if rebalance_candidates and self.config.auto_rebalance:
+                    # Auto-rebalance: sell weakest position, buy new opportunity
+                    weakest = rebalance_candidates[0]
+                    sell_amount = weakest['value']
+
+                    # Sell weak position
+                    sell_decision = TradeDecision(
+                        symbol=weakest['symbol'],
+                        action='SELL',
+                        amount=sell_amount,
+                        reason=weakest['reason'],
+                        research_score=weakest['score']
+                    )
+                    self._log_trade(sell_decision)
+                    executed.append(sell_decision)
+
+                    # Buy new opportunity
+                    buy_decision = TradeDecision(
+                        symbol=symbol,
+                        action='BUY',
+                        amount=amount,
+                        reason=f"Rebalance: Sold {weakest['symbol']}, bought {symbol}",
+                        research_score=rec['score']
+                    )
+                    self._log_trade(buy_decision)
+                    executed.append(buy_decision)
+
+                    # Send notification
+                    self._send_notification(
+                        f"⚖️ PORTFOLIO REBALANCE",
+                        f"Sold: {weakest['symbol']} (${sell_amount:,.0f}, score {weakest['score']:.0f}/100)\n"
+                        f"Bought: {symbol} (${amount:,.0f}, score {rec['score']:.0f}/100)\n"
+                        f"Reason: Better opportunity identified"
+                    )
+
+                else:
+                    # Not enough cash, can't rebalance - need user input
+                    alerts.append({
+                        'type': 'CASH_NEEDED',
+                        'symbol': symbol,
+                        'amount_needed': amount - current_cash,
+                        'message': f"Need ${amount - current_cash:,.0f} more to acquire {symbol}"
+                    })
+
+                    # Send alert
+                    self._send_notification(
+                        f"💰 CASH NEEDED",
+                        f"Opportunity identified: {symbol}\n"
+                        f"Required: ${amount:,.0f}\n"
+                        f"Available: ${current_cash:,.0f}\n"
+                        f"Shortage: ${amount - current_cash:,.0f}\n\n"
+                        f"Please add funds or approve rebalancing."
+                    )
+
+                    pending.append(rec)
+
+        return executed, pending, alerts
+
+    def _send_notification(self, subject, message):
+        """Send email notification (placeholder - implement with your email service)"""
+        # For now, just log to file
+        try:
+            with open("notifications.log", "a") as f:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"[{timestamp}] {subject}\n{message}\n\n")
+        except:
+            pass
+        # TODO: Integrate with email service (SendGrid, AWS SES, etc.)
+        # or use Anthropic notification system
 
 if __name__ == "__main__":
     config = TradeConfig()
