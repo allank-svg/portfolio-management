@@ -309,6 +309,9 @@
 
 <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('portfolio')">Portfolio Today</button>
+    <button class="tab-btn" onclick="switchTab('morning')">Morning Actions</button>
+    <button class="tab-btn" onclick="switchTab('acquisitions')">Acquisition Pipeline</button>
+    <button class="tab-btn" onclick="switchTab('alerts')">Alerts & Notifications</button>
     <button class="tab-btn" onclick="switchTab('research')">Daily Research</button>
     <button class="tab-btn" onclick="switchTab('market')">Market Overview</button>
     <button class="tab-btn" onclick="switchTab('config')">Configuration</button>
@@ -352,6 +355,96 @@
 </div>
 
 <!-- ==================== DAILY RESEARCH ==================== -->
+<div id="morning" class="section">
+    <div class="wrap">
+        <h2 style="margin-top: 0; color: var(--accent);">🌅 Morning Research Results</h2>
+        <p style="color: var(--tx3);">Daily research executed at market open - acquisitions, trades, and rebalancing actions</p>
+
+        <div id="morning-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px;"></div>
+
+        <div class="card">
+            <div class="card-title">✅ Acquisitions Executed</div>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead style="border-bottom: 1px solid var(--line);">
+                    <tr style="font-size: 12px; color: var(--tx3);">
+                        <th style="text-align: left; padding: 8px;">Symbol</th>
+                        <th style="text-align: right; padding: 8px;">Amount</th>
+                        <th style="text-align: right; padding: 8px;">Score</th>
+                        <th style="text-align: left; padding: 8px;">Reason</th>
+                    </tr>
+                </thead>
+                <tbody id="morning-acquisitions"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📊 Trades Executed</div>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead style="border-bottom: 1px solid var(--line);">
+                    <tr style="font-size: 12px; color: var(--tx3);">
+                        <th style="text-align: left; padding: 8px;">Symbol</th>
+                        <th style="text-align: center; padding: 8px;">Action</th>
+                        <th style="text-align: right; padding: 8px;">Amount</th>
+                        <th style="text-align: left; padding: 8px;">Reason</th>
+                    </tr>
+                </thead>
+                <tbody id="morning-trades"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="acquisitions" class="section">
+    <div class="wrap">
+        <h2 style="margin-top: 0; color: var(--accent);">🎯 Acquisition Pipeline</h2>
+        <p style="color: var(--tx3);">New stocks identified for acquisition - pending cash or approval</p>
+
+        <div class="card">
+            <div class="card-title">⏳ Pending Acquisitions</div>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead style="border-bottom: 1px solid var(--line);">
+                    <tr style="font-size: 12px; color: var(--tx3);">
+                        <th style="text-align: left; padding: 8px;">Symbol</th>
+                        <th style="text-align: right; padding: 8px;">Amount Needed</th>
+                        <th style="text-align: right; padding: 8px;">Score</th>
+                        <th style="text-align: right; padding: 8px;">Upside</th>
+                        <th style="text-align: left; padding: 8px;">Reason</th>
+                    </tr>
+                </thead>
+                <tbody id="pending-acquisitions"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <div class="card-title">⚖️ Rebalancing Suggestions</div>
+            <p id="rebalance-message" style="color: var(--tx3); margin: 0;">Analyzing portfolio for rebalancing opportunities...</p>
+            <table style="width: 100%; border-collapse: collapse; display: none;" id="rebalance-table">
+                <thead style="border-bottom: 1px solid var(--line);">
+                    <tr style="font-size: 12px; color: var(--tx3);">
+                        <th style="text-align: left; padding: 8px;">Sell (Weak)</th>
+                        <th style="text-align: right; padding: 8px;">Value</th>
+                        <th style="text-align: right; padding: 8px;">Score</th>
+                        <th style="text-align: left; padding: 8px;">→ Buy (Strong)</th>
+                        <th style="text-align: right; padding: 8px;">Upside</th>
+                    </tr>
+                </thead>
+                <tbody id="rebalance-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="alerts" class="section">
+    <div class="wrap">
+        <h2 style="margin-top: 0; color: var(--accent);">🚨 Alerts & Notifications</h2>
+        <p style="color: var(--tx3);">System notifications, cash alerts, and action items</p>
+
+        <div id="alerts-container">
+            <p style="color: var(--tx3);">No active alerts</p>
+        </div>
+    </div>
+</div>
+
 <div id="research" class="section">
     <div class="wrap">
 
@@ -372,11 +465,11 @@
                     <th>Symbol</th>
                     <th>Score</th>
                     <th>Recommendation</th>
+                    <th>Thesis Health</th>
                     <th>Current Price</th>
                     <th>Fair Value</th>
                     <th>Upside to Fair</th>
                     <th>Earnings Quality</th>
-                    <th>Valuation</th>
                 </tr>
             </thead>
             <tbody id="research-tbody"></tbody>
@@ -608,9 +701,13 @@ function switchTab(tabName) {
 async function refreshAllData() {
     const portfolio = await fetch('/api/portfolio-today').then(r => r.json());
     const research = await fetch('/api/research').then(r => r.json());
+    const morning = await fetch('/api/morning-research').then(r => r.json()).catch(e => ({}));
 
     renderPortfolioToday(portfolio);
     renderResearch(research);
+    renderMorningActions(morning);
+    renderAcquisitionPipeline(morning);
+    renderAlerts(morning);
     loadConfiguration();
 }
 
@@ -709,18 +806,23 @@ function renderResearch(data) {
     document.getElementById('research-summary').innerHTML = summaryHtml;
 
     // Top 10
-    const topHtml = data.top_10_recommendations.map(r => `
-        <tr>
-            <td><span class="ticker">${r.symbol}</span></td>
-            <td class="num"><strong>${r.score.toFixed(0)}</strong></td>
-            <td><span style="padding: 2px 8px; border-radius: 3px; background: var(--bg2); color: ${r.recommendation === 'BUY' ? 'var(--buy)' : r.recommendation === 'SELL' ? 'var(--sell)' : 'var(--hold)'}; font-weight: 600; font-size: 11px;">${r.recommendation}</span></td>
-            <td class="num">$${r.current_price.toFixed(2)}</td>
-            <td class="num">$${r.fair_value.toFixed(0)}</td>
-            <td class="num ${r.upside_to_fair >= 0 ? 'up' : 'dn'}">${r.upside_to_fair >= 0 ? '+' : ''}${r.upside_to_fair.toFixed(1)}%</td>
-            <td style="font-size: 11px;">${(r.revenue_growth * 100).toFixed(1)}%</td>
-            <td style="font-size: 11px;">${r.pe_multiple.toFixed(1)}x</td>
-        </tr>
-    `).join('');
+    const topHtml = data.top_10_recommendations.map(r => {
+        const thesisColor = r.thesis_health === 'STRONG' ? 'var(--up)' :
+                           r.thesis_health === 'DETERIORATING' ? 'var(--dn)' :
+                           r.thesis_health === 'WEAKENING' ? 'var(--hold)' : 'var(--tx2)';
+        return `
+            <tr>
+                <td><span class="ticker">${r.symbol}</span></td>
+                <td class="num"><strong>${r.composite_score ? r.composite_score.toFixed(0) : 'N/A'}</strong></td>
+                <td><span style="padding: 2px 8px; border-radius: 3px; background: var(--bg2); color: ${r.recommendation === 'BUY' ? 'var(--buy)' : r.recommendation === 'STRONG_BUY' ? 'var(--buy)' : r.recommendation === 'SELL' ? 'var(--sell)' : 'var(--hold)'}; font-weight: 600; font-size: 11px;">${r.recommendation}</span></td>
+                <td style="font-size: 11px; color: ${thesisColor}; font-weight: 600;">${r.thesis_health || 'INTACT'}</td>
+                <td class="num">$${r.current_price.toFixed(2)}</td>
+                <td class="num">$${r.fair_value.toFixed(0)}</td>
+                <td class="num ${r.upside_to_fair >= 0 ? 'up' : 'dn'}">${r.upside_to_fair >= 0 ? '+' : ''}${r.upside_to_fair.toFixed(1)}%</td>
+                <td style="font-size: 11px;">${(r.revenue_growth * 100).toFixed(1)}%</td>
+            </tr>
+        `;
+    }).join('');
     document.getElementById('research-tbody').innerHTML = topHtml;
 
     // Top 20
@@ -761,6 +863,136 @@ async function saveConfiguration() {
     }).then(r => r.json());
 
     document.getElementById('config-status').textContent = '✓ Configuration saved at ' + new Date().toLocaleTimeString();
+}
+
+function renderMorningActions(data) {
+    if (!data || !data.acquisitions_executed) {
+        return;
+    }
+
+    // Morning Summary KPIs
+    const summaryHtml = `
+        <div class="kpi">
+            <div class="kpi-label">Acquisitions</div>
+            <div class="kpi-value">${data.acquisitions_executed ? data.acquisitions_executed.length : 0}</div>
+            <div class="kpi-note">New positions</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Trades Executed</div>
+            <div class="kpi-value">${data.trades_executed ? data.trades_executed.length : 0}</div>
+            <div class="kpi-note">Buy/Sell actions</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Pending Approval</div>
+            <div class="kpi-value">${data.acquisitions_pending && data.acquisitions_pending.length > 0 ? data.acquisitions_pending.length : 0}</div>
+            <div class="kpi-note">Awaiting decision</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Timestamp</div>
+            <div class="kpi-note" style="font-size: 11px;">${data.timestamp || 'N/A'}</div>
+        </div>
+    `;
+    const summaryEl = document.getElementById('morning-summary');
+    if (summaryEl) summaryEl.innerHTML = summaryHtml;
+
+    // Acquisitions Executed
+    const acqHtml = (data.acquisitions_executed || []).map(a => `
+        <tr>
+            <td><span class="ticker">${a.symbol}</span></td>
+            <td class="num">$${a.amount.toLocaleString('en-US', {maximumFractionDigits: 0})}</td>
+            <td class="num"><strong>${a.score.toFixed(0)}/100</strong></td>
+            <td style="font-size: 12px; color: var(--tx2);">${a.reason}</td>
+        </tr>
+    `).join('');
+
+    const acqEl = document.getElementById('morning-acquisitions');
+    if (acqEl) {
+        acqEl.innerHTML = acqHtml || '<tr><td colspan="4" style="text-align: center; color: var(--tx3);">No acquisitions executed yet</td></tr>';
+    }
+
+    // Trades Executed
+    const tradeHtml = (data.trades_executed || []).map(t => `
+        <tr>
+            <td><span class="ticker">${t.symbol}</span></td>
+            <td style="text-align: center;">
+                <span style="padding: 3px 8px; border-radius: 3px; background: ${t.action === 'BUY' ? 'var(--buy)' : 'var(--sell)'}; color: white; font-size: 11px; font-weight: 600;">${t.action}</span>
+            </td>
+            <td class="num">$${t.amount.toLocaleString('en-US', {maximumFractionDigits: 0})}</td>
+            <td style="font-size: 12px; color: var(--tx2);">${t.reason}</td>
+        </tr>
+    `).join('');
+
+    const tradeEl = document.getElementById('morning-trades');
+    if (tradeEl) {
+        tradeEl.innerHTML = tradeHtml || '<tr><td colspan="4" style="text-align: center; color: var(--tx3);">No trades executed yet</td></tr>';
+    }
+}
+
+function renderAcquisitionPipeline(data) {
+    if (!data) {
+        return;
+    }
+
+    // Pending Acquisitions
+    const pendingHtml = (data.acquisitions_pending || []).map(p => `
+        <tr>
+            <td><span class="ticker">${p.symbol}</span></td>
+            <td class="num">$${p.amount.toLocaleString('en-US', {maximumFractionDigits: 0})}</td>
+            <td class="num"><strong>${p.score.toFixed(0)}/100</strong></td>
+            <td class="num ${p.upside >= 0 ? 'up' : 'dn'}">${p.upside >= 0 ? '+' : ''}${p.upside.toFixed(1)}%</td>
+            <td style="font-size: 12px; color: var(--tx2);">${p.reason}</td>
+        </tr>
+    `).join('');
+
+    const pendingEl = document.getElementById('pending-acquisitions');
+    if (pendingEl) {
+        pendingEl.innerHTML = pendingHtml || '<tr><td colspan="5" style="text-align: center; color: var(--tx3);">No pending acquisitions</td></tr>';
+    }
+
+    // Rebalancing Suggestions (if any)
+    // For now, show a message since we don't have structured rebalance data yet
+    const rebalanceMsg = document.getElementById('rebalance-message');
+    if (rebalanceMsg) {
+        if (data.acquisitions_pending && data.acquisitions_pending.length > 0) {
+            rebalanceMsg.innerHTML = `<span style="color: var(--tx3);">Auto-rebalancing available if you approve pending acquisitions</span>`;
+        } else {
+            rebalanceMsg.innerHTML = `<span style="color: var(--tx3);">Portfolio is balanced. All strong positions held.</span>`;
+        }
+    }
+}
+
+function renderAlerts(data) {
+    if (!data || !data.cash_alerts) {
+        const alertsEl = document.getElementById('alerts-container');
+        if (alertsEl) {
+            alertsEl.innerHTML = '<p style="color: var(--tx3); font-size: 13px;">✓ No active alerts. System is functioning normally.</p>';
+        }
+        return;
+    }
+
+    const alerts = data.cash_alerts || [];
+    if (alerts.length === 0) {
+        document.getElementById('alerts-container').innerHTML = '<p style="color: var(--tx3); font-size: 13px;">✓ No active alerts. System is functioning normally.</p>';
+        return;
+    }
+
+    const alertsHtml = alerts.map(alert => {
+        const bgColor = alert.type === 'CASH_NEEDED' ? 'rgba(224, 85, 99, 0.1)' : 'rgba(201, 154, 61, 0.1)';
+        const borderColor = alert.type === 'CASH_NEEDED' ? 'var(--dn)' : 'var(--hold)';
+
+        return `
+            <div style="background: ${bgColor}; border-left: 4px solid ${borderColor}; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                <div style="font-weight: 600; color: var(--tx); margin-bottom: 4px;">
+                    ${alert.type === 'CASH_NEEDED' ? '💰' : '⚠️'} ${alert.type === 'CASH_NEEDED' ? 'Cash Needed for Acquisition' : 'Alert'}
+                </div>
+                <div style="font-size: 13px; color: var(--tx2);">
+                    ${alert.message}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('alerts-container').innerHTML = alertsHtml;
 }
 
 refreshAllData();
