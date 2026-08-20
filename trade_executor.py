@@ -1,3 +1,4 @@
+
 """
 Trade Executor
 Executes trades based on fundamental research signals
@@ -5,13 +6,13 @@ Respects user's configuration limits (max buy/sell per day, approval thresholds)
 Handles automatic acquisition of new stocks and portfolio rebalancing
 All trades logged with fundamental reasoning
 """
-
+ 
 import json
 from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
+ 
 class TradeConfig:
     """User-settable trading parameters"""
     def __init__(self):
@@ -22,7 +23,7 @@ class TradeConfig:
         self.max_portfolio_concentration = 0.20     # No single position > 20% of portfolio
         self.use_limit_orders = True                # Use limit orders, not market
         self.order_validity_days = 7                # Good-til-canceled for 7 days
-
+ 
         # Acquisition & Rebalancing settings
         self.auto_buy_new_acquisitions = True       # Auto-buy new stocks that meet criteria
         self.min_cash_buffer = 2000                 # Keep minimum cash buffer
@@ -32,7 +33,7 @@ class TradeConfig:
         self.rebalance_threshold = 45               # Sell if composite score < this
         self.email_on_acquisition = True            # Email notification on new buys
         self.email_address = "allan@kginvest.net"   # Where to send notifications
-
+ 
     def to_dict(self):
         return {
             'max_buy_per_stock_per_day': self.max_buy_per_stock_per_day,
@@ -41,9 +42,17 @@ class TradeConfig:
             'approval_threshold_sell': self.approval_threshold_sell,
             'max_portfolio_concentration': self.max_portfolio_concentration,
             'use_limit_orders': self.use_limit_orders,
-            'order_validity_days': self.order_validity_days
+            'order_validity_days': self.order_validity_days,
+            'auto_buy_new_acquisitions': self.auto_buy_new_acquisitions,
+            'min_cash_buffer': self.min_cash_buffer,
+            'acquisition_min_fundamental_score': self.acquisition_min_fundamental_score,
+            'acquisition_min_upside': self.acquisition_min_upside,
+            'auto_rebalance': self.auto_rebalance,
+            'rebalance_threshold': self.rebalance_threshold,
+            'email_on_acquisition': self.email_on_acquisition,
+            'email_address': self.email_address
         }
-
+ 
     @staticmethod
     def load(config_file="/home/claude/trade_config.json"):
         """Load config from file, or create default"""
@@ -57,12 +66,12 @@ class TradeConfig:
                 return config
         except:
             return TradeConfig()
-
+ 
     def save(self, config_file="/home/claude/trade_config.json"):
         """Persist config to file"""
         with open(config_file, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
-
+ 
 class TradeDecision:
     """Represents a single trade recommendation"""
     def __init__(self, symbol, action, amount, reason, research_score):
@@ -74,79 +83,79 @@ class TradeDecision:
         self.timestamp = datetime.now().isoformat()
         self.requires_approval = False
         self.approval_reason = ""
-
+ 
 class TradeExecutor:
     """Executes trades based on research signals, respecting config guardrails"""
-
+ 
     def __init__(self, config=None):
         self.config = config or TradeConfig.load()
         self.trade_log = []
         self.pending_approvals = []
-
+ 
     def should_execute_buy(self, symbol, amount, current_position_value, total_portfolio_value):
         """
         Check if a buy is within guardrails
         Returns: (can_execute, requires_approval, reason)
         """
-
+ 
         # Check daily buy limit
         today_buy_amount = sum(t['amount'] for t in self.trade_log
                               if t['symbol'] == symbol and t['action'] == 'BUY'
                               and self._is_today(t['timestamp']))
-
+ 
         if today_buy_amount + amount > self.config.max_buy_per_stock_per_day:
             return False, False, f"Exceeds daily buy limit of ${self.config.max_buy_per_stock_per_day}"
-
+ 
         # Check portfolio concentration
         new_position_value = current_position_value + amount
         if total_portfolio_value > 0:
             new_concentration = new_position_value / total_portfolio_value
             if new_concentration > self.config.max_portfolio_concentration:
                 return False, False, f"Would exceed max {self.config.max_portfolio_concentration*100:.0f}% concentration"
-
+ 
         # Check approval threshold
         requires_approval = amount > self.config.approval_threshold_buy
-
+ 
         return True, requires_approval, "Within guardrails"
-
+ 
     def should_execute_sell(self, symbol, amount, current_position_value):
         """
         Check if a sell is within guardrails
         Returns: (can_execute, requires_approval, reason)
         """
-
+ 
         # Check daily sell limit
         today_sell_amount = sum(t['amount'] for t in self.trade_log
                                if t['symbol'] == symbol and t['action'] == 'SELL'
                                and self._is_today(t['timestamp']))
-
+ 
         if today_sell_amount + amount > self.config.max_sell_per_stock_per_day:
             return False, False, f"Exceeds daily sell limit of ${self.config.max_sell_per_stock_per_day}"
-
+ 
         # Can't sell more than we hold
         if amount > current_position_value:
             return False, False, f"Insufficient holdings (have ${current_position_value:.0f}, trying to sell ${amount:.0f})"
-
+ 
         # Check approval threshold
         requires_approval = amount > self.config.approval_threshold_sell
-
+ 
         return True, requires_approval, "Within guardrails"
-
+ 
     def generate_trade_decisions(self, research_report, portfolio, current_quotes):
         """
         Based on daily research, generate trade recommendations
         Returns: list of TradeDecision objects
         """
         decisions = []
-
+ 
         # Map current holdings
         holdings_map = {p['symbol']: p for p in portfolio['positions']}
-
+ 
         # BUY signals: research recommends buying
         for rec in research_report['buy_signals']:
             symbol = rec['symbol']
             score = rec['composite_score']
-
+ 
             if symbol in holdings_map:
                 # Already holding - recommend "buy more"
                 current_val = holdings_map[symbol]['position_value']
@@ -157,7 +166,7 @@ class TradeExecutor:
                 # New position - size at 2% of portfolio for diversification
                 portfolio_val = portfolio['kpis']['account_value']
                 buy_amount = portfolio_val * 0.02
-
+ 
             decision = TradeDecision(
                 symbol=symbol,
                 action='BUY',
@@ -166,16 +175,16 @@ class TradeExecutor:
                 research_score=score
             )
             decisions.append(decision)
-
+ 
         # SELL signals: research recommends selling
         for rec in research_report['sell_signals']:
             symbol = rec['symbol']
             score = rec['composite_score']
-
+ 
             if symbol in holdings_map:
                 # We're holding this
                 current_val = holdings_map[symbol]['position_value']
-
+ 
                 # Decide how much to sell based on score
                 if score < 30:
                     # Critical sell - exit 50%
@@ -186,7 +195,7 @@ class TradeExecutor:
                 else:
                     # Trim - exit 10%
                     sell_amount = current_val * 0.10
-
+ 
                 decision = TradeDecision(
                     symbol=symbol,
                     action='SELL',
@@ -195,9 +204,9 @@ class TradeExecutor:
                     research_score=score
                 )
                 decisions.append(decision)
-
+ 
         return decisions
-
+ 
     def execute_trades(self, decisions, portfolio, current_quotes):
         """
         Execute a list of trade decisions, respecting config guardrails
@@ -205,19 +214,19 @@ class TradeExecutor:
         """
         executed = []
         pending = []
-
+ 
         portfolio_val = portfolio['kpis']['account_value']
         holdings_map = {p['symbol']: p for p in portfolio['positions']}
-
+ 
         for decision in decisions:
             symbol = decision.symbol
-
+ 
             if decision.action == 'BUY':
                 current_pos_val = holdings_map.get(symbol, {}).get('position_value', 0)
                 can_execute, needs_approval, reason = self.should_execute_buy(
                     symbol, decision.amount, current_pos_val, portfolio_val
                 )
-
+ 
                 if not can_execute:
                     decision.requires_approval = True
                     decision.approval_reason = reason
@@ -230,13 +239,13 @@ class TradeExecutor:
                     # Auto-execute
                     self._log_trade(decision)
                     executed.append(decision)
-
+ 
             elif decision.action == 'SELL':
                 current_pos_val = holdings_map.get(symbol, {}).get('position_value', 0)
                 can_execute, needs_approval, reason = self.should_execute_sell(
                     symbol, decision.amount, current_pos_val
                 )
-
+ 
                 if not can_execute:
                     decision.requires_approval = True
                     decision.approval_reason = reason
@@ -249,9 +258,9 @@ class TradeExecutor:
                     # Auto-execute
                     self._log_trade(decision)
                     executed.append(decision)
-
+ 
         return executed, pending
-
+ 
     def _log_trade(self, decision):
         """Log executed trade"""
         self.trade_log.append({
@@ -262,28 +271,28 @@ class TradeExecutor:
             'reason': decision.reason,
             'research_score': decision.research_score
         })
-
+ 
     def _is_today(self, timestamp_str):
         """Check if timestamp is from today"""
         from datetime import date
         timestamp = datetime.fromisoformat(timestamp_str)
         return timestamp.date() == date.today()
-
+ 
     def get_pending_approvals(self):
         """Get list of trades waiting for user approval"""
         return self.pending_approvals
-
+ 
     def approve_trade(self, symbol, action):
         """User approves a pending trade"""
         # Remove from pending, log as executed
         # Send confirmation email/notification
         pass
-
+ 
     def reject_trade(self, symbol, action, reason=""):
         """User rejects a pending trade"""
         # Remove from pending, log as rejected
         pass
-
+ 
     def evaluate_new_acquisitions(self, candidates, current_portfolio, portfolio_value):
         """
         Evaluate new acquisition candidates for automatic buying
@@ -292,24 +301,24 @@ class TradeExecutor:
         buy_recommendations = []
         cash_needed = 0
         rebalance_suggestions = []
-
+ 
         for candidate in candidates:
             symbol = candidate['symbol']
             upside = candidate.get('upside_pct', 0) / 100
-
+ 
             # Check criteria
             if upside < self.config.acquisition_min_upside:
                 continue  # Doesn't meet upside requirement
-
+ 
             # Estimate score from upside and valuation
             score = min(80, 50 + (upside * 100))  # Rough score from upside
-
+ 
             if score < self.config.acquisition_min_fundamental_score:
                 continue  # Doesn't meet fundamental requirement
-
+ 
             # Size: 2% of portfolio for new positions
             buy_amount = portfolio_value * 0.02
-
+ 
             buy_recommendations.append({
                 'symbol': symbol,
                 'amount': buy_amount,
@@ -319,31 +328,31 @@ class TradeExecutor:
                 'fair_value': candidate.get('fair_value', 0),
                 'current_price': candidate.get('price', 0)
             })
-
+ 
             cash_needed += buy_amount
-
+ 
         return buy_recommendations, cash_needed, rebalance_suggestions
-
+ 
     def get_rebalance_candidates(self, portfolio, research_scores):
         """
         Find weak positions to sell to make room for better opportunities
         Returns: list of positions to sell (lowest score first)
         """
         rebalance_candidates = []
-
+ 
         for position in portfolio['positions']:
             symbol = position['symbol']
-
+ 
             # Find research score for this position
             score = None
             for rec in research_scores.get('top_10_recommendations', []):
                 if rec['symbol'] == symbol:
                     score = rec['composite_score']
                     break
-
+ 
             if not score:
                 score = 50  # Default neutral score
-
+ 
             # If score below threshold, consider for selling
             if score < self.config.rebalance_threshold:
                 rebalance_candidates.append({
@@ -352,37 +361,46 @@ class TradeExecutor:
                     'score': score,
                     'reason': f"Weak fundamentals ({score:.0f}/100), consider rebalancing"
                 })
-
+ 
         # Sort by score (lowest first)
         rebalance_candidates.sort(key=lambda x: x['score'])
         return rebalance_candidates
-
+ 
     def process_acquisitions_with_rebalancing(self, candidates, portfolio, research, current_quotes):
         """
-        Main acquisition processor: evaluate new opportunities and auto-buy with rebalancing
+        Main acquisition processor: evaluate new opportunities and auto-buy with rebalancing.
+        All buys/sells are still routed through should_execute_buy()/should_execute_sell()
+        so daily limits, approval thresholds, and concentration caps are always respected —
+        acquisitions and rebalancing get NO special exemption from your guardrails.
         Returns: (executed_acquisitions, pending_acquisitions, alerts)
         """
         executed = []
         pending = []
         alerts = []
-
+ 
         portfolio_value = portfolio['kpis']['account_value']
         current_cash = portfolio['kpis']['cash']
-
+        holdings_map = {p['symbol']: p for p in portfolio['positions']}
+ 
         # Evaluate new acquisition candidates
         buy_recs, cash_needed, rebalance = self.evaluate_new_acquisitions(
             research.get('acquisition_candidates', []),
             portfolio['positions'],
             portfolio_value
         )
-
+ 
         for rec in buy_recs:
             symbol = rec['symbol']
             amount = rec['amount']
-
+ 
             # Check if we have cash
             if current_cash - self.config.min_cash_buffer >= amount:
-                # Auto-buy: we have cash
+                # We have cash - still must pass guardrails before auto-executing
+                current_pos_val = holdings_map.get(symbol, {}).get('position_value', 0)
+                can_execute, needs_approval, reason = self.should_execute_buy(
+                    symbol, amount, current_pos_val, portfolio_value
+                )
+ 
                 decision = TradeDecision(
                     symbol=symbol,
                     action='BUY',
@@ -390,28 +408,43 @@ class TradeExecutor:
                     reason=rec['reason'],
                     research_score=rec['score']
                 )
-                self._log_trade(decision)
-                executed.append(decision)
-                current_cash -= amount
-
-                # Send notification
-                self._send_notification(
-                    f"🎯 NEW ACQUISITION: {symbol}",
-                    f"Bought ${amount:,.0f} at ${rec['current_price']:.2f}\n"
-                    f"Fair Value: ${rec['fair_value']:.2f}\n"
-                    f"Upside: {rec['upside']:.1f}%"
-                )
-
+ 
+                if can_execute and not needs_approval:
+                    self._log_trade(decision)
+                    executed.append(decision)
+                    current_cash -= amount
+ 
+                    self._send_notification(
+                        f"🎯 NEW ACQUISITION: {symbol}",
+                        f"Bought ${amount:,.0f} at ${rec['current_price']:.2f}\n"
+                        f"Fair Value: ${rec['fair_value']:.2f}\n"
+                        f"Upside: {rec['upside']:.1f}%"
+                    )
+                else:
+                    decision.requires_approval = True
+                    decision.approval_reason = reason if not can_execute else f"Exceeds approval threshold of ${self.config.approval_threshold_buy}"
+                    pending.append(decision)
+ 
+                    self._send_notification(
+                        f"⏳ ACQUISITION PENDING APPROVAL: {symbol}",
+                        f"Proposed: ${amount:,.0f} at ${rec['current_price']:.2f}\n"
+                        f"Reason held for approval: {decision.approval_reason}"
+                    )
+ 
             else:
                 # Not enough cash - suggest rebalancing
                 rebalance_candidates = self.get_rebalance_candidates(portfolio, research)
-
+ 
                 if rebalance_candidates and self.config.auto_rebalance:
                     # Auto-rebalance: sell weakest position, buy new opportunity
                     weakest = rebalance_candidates[0]
                     sell_amount = weakest['value']
-
-                    # Sell weak position
+                    weakest_pos_val = holdings_map.get(weakest['symbol'], {}).get('position_value', sell_amount)
+ 
+                    can_sell, sell_needs_approval, sell_reason = self.should_execute_sell(
+                        weakest['symbol'], sell_amount, weakest_pos_val
+                    )
+ 
                     sell_decision = TradeDecision(
                         symbol=weakest['symbol'],
                         action='SELL',
@@ -419,10 +452,29 @@ class TradeExecutor:
                         reason=weakest['reason'],
                         research_score=weakest['score']
                     )
+ 
+                    if not (can_sell and not sell_needs_approval):
+                        sell_decision.requires_approval = True
+                        sell_decision.approval_reason = sell_reason if not can_sell else f"Exceeds approval threshold of ${self.config.approval_threshold_sell}"
+                        pending.append(sell_decision)
+ 
+                        self._send_notification(
+                            f"⏳ REBALANCE SELL PENDING APPROVAL: {weakest['symbol']}",
+                            f"Proposed sell: ${sell_amount:,.0f} (score {weakest['score']:.0f}/100) to fund {symbol}\n"
+                            f"Reason held for approval: {sell_decision.approval_reason}"
+                        )
+                        continue
+ 
+                    # Sell cleared guardrails - execute it
                     self._log_trade(sell_decision)
                     executed.append(sell_decision)
-
-                    # Buy new opportunity
+ 
+                    # Now check the buy leg against guardrails too
+                    buy_pos_val = holdings_map.get(symbol, {}).get('position_value', 0)
+                    can_buy, buy_needs_approval, buy_reason = self.should_execute_buy(
+                        symbol, amount, buy_pos_val, portfolio_value
+                    )
+ 
                     buy_decision = TradeDecision(
                         symbol=symbol,
                         action='BUY',
@@ -430,17 +482,27 @@ class TradeExecutor:
                         reason=f"Rebalance: Sold {weakest['symbol']}, bought {symbol}",
                         research_score=rec['score']
                     )
-                    self._log_trade(buy_decision)
-                    executed.append(buy_decision)
-
-                    # Send notification
-                    self._send_notification(
-                        f"⚖️ PORTFOLIO REBALANCE",
-                        f"Sold: {weakest['symbol']} (${sell_amount:,.0f}, score {weakest['score']:.0f}/100)\n"
-                        f"Bought: {symbol} (${amount:,.0f}, score {rec['score']:.0f}/100)\n"
-                        f"Reason: Better opportunity identified"
-                    )
-
+ 
+                    if can_buy and not buy_needs_approval:
+                        self._log_trade(buy_decision)
+                        executed.append(buy_decision)
+ 
+                        self._send_notification(
+                            f"⚖️ PORTFOLIO REBALANCE",
+                            f"Sold: {weakest['symbol']} (${sell_amount:,.0f}, score {weakest['score']:.0f}/100)\n"
+                            f"Bought: {symbol} (${amount:,.0f}, score {rec['score']:.0f}/100)\n"
+                            f"Reason: Better opportunity identified"
+                        )
+                    else:
+                        buy_decision.requires_approval = True
+                        buy_decision.approval_reason = buy_reason if not can_buy else f"Exceeds approval threshold of ${self.config.approval_threshold_buy}"
+                        pending.append(buy_decision)
+ 
+                        self._send_notification(
+                            f"⏳ REBALANCE BUY PENDING APPROVAL: {symbol}",
+                            f"Sold {weakest['symbol']} (${sell_amount:,.0f}) but the buy leg into {symbol} needs approval: {buy_decision.approval_reason}"
+                        )
+ 
                 else:
                     # Not enough cash, can't rebalance - need user input
                     alerts.append({
@@ -449,7 +511,7 @@ class TradeExecutor:
                         'amount_needed': amount - current_cash,
                         'message': f"Need ${amount - current_cash:,.0f} more to acquire {symbol}"
                     })
-
+ 
                     # Send alert
                     self._send_notification(
                         f"💰 CASH NEEDED",
@@ -459,11 +521,11 @@ class TradeExecutor:
                         f"Shortage: ${amount - current_cash:,.0f}\n\n"
                         f"Please add funds or approve rebalancing."
                     )
-
+ 
                     pending.append(rec)
-
+ 
         return executed, pending, alerts
-
+ 
     def _send_notification(self, subject, message):
         """Send email notification (placeholder - implement with your email service)"""
         # For now, just log to file
@@ -475,8 +537,9 @@ class TradeExecutor:
             pass
         # TODO: Integrate with email service (SendGrid, AWS SES, etc.)
         # or use Anthropic notification system
-
+ 
 if __name__ == "__main__":
     config = TradeConfig()
     executor = TradeExecutor(config)
     print(json.dumps(config.to_dict(), indent=2))
+ 
