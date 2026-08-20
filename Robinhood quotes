@@ -1,0 +1,89 @@
+uotes · PY
+"""
+Robinhood Quote Fetcher
+Fetches live quotes from Robinhood API and updates cache
+"""
+ 
+import json
+import os
+from datetime import datetime
+from config import HOLDINGS
+ 
+# When running on Render (production), these would be real Robinhood API calls
+# For development, using cached quotes is acceptable
+# To enable live Robinhood quotes:
+# 1. Set ROBINHOOD_API_KEY environment variable
+# 2. Uncomment the import below and implement the live fetching
+ 
+def fetch_robinhood_quotes_live():
+    """
+    Fetch live quotes from Robinhood API
+    In production environment, this would call:
+    from mcp__Robinhood__get_equity_quotes import get_equity_quotes
+ 
+    Returns: dict of {symbol: {last, prevclose, bid, ask, etc}}
+    """
+    # TODO: Implement when Robinhood API key is available
+    # For now, returns cached data
+ 
+    symbols = [h["symbol"] for h in HOLDINGS]
+ 
+    # In production, would call:
+    # quotes_response = get_equity_quotes(symbols)
+    # return {
+    #     s['symbol']: {
+    #         'last': float(s['last_trade_price']),
+    #         'prevclose': float(s['previous_close']),
+    #         'bid': float(s['bid_price']),
+    #         'ask': float(s['ask_price']),
+    #         'high_52w': float(s['high_52_weeks']),
+    #         'low_52w': float(s['low_52_weeks']),
+    #     }
+    #     for s in quotes_response
+    # }
+ 
+    # Fallback to cache
+    return load_quote_cache()
+ 
+def load_quote_cache():
+    """Load cached quotes (fallback)"""
+    cache_file = "/home/claude/quote_cache.json"
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+ 
+def update_quote_cache(quotes):
+    """Save quotes to cache"""
+    cache_file = "/home/claude/quote_cache.json"
+    try:
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, "w") as f:
+            json.dump(quotes, f)
+        return True
+    except:
+        return False
+ 
+def get_quotes_with_metadata():
+    """Get quotes plus metadata (timestamp, source)"""
+    quotes = fetch_robinhood_quotes_live()
+ 
+    # Add metadata
+    metadata = {
+        'timestamp': datetime.now().isoformat(),
+        'source': 'robinhood_api',  # or 'cache' if using fallback
+        'quote_count': len(quotes),
+    }
+ 
+    return quotes, metadata
+ 
+if __name__ == "__main__":
+    quotes, meta = get_quotes_with_metadata()
+    print(f"Loaded {meta['quote_count']} quotes")
+    print(f"Updated: {meta['timestamp']}")
+    print(f"Source: {meta['source']}")
+    print(json.dumps(quotes, indent=2))
+ 
