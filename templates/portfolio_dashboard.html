@@ -297,10 +297,11 @@
 <header>
     <div class="wrap">
         <div>
-            <h1>Fundamental Portfolio Manager</h1>
-            <p>Daily exhaustive research → Automated execution</p>
+            <h1 id="brief-title">Fundamental Portfolio Manager</h1>
+            <p id="brief-subtitle">Daily exhaustive research → Automated execution</p>
         </div>
         <div class="header-right">
+            <div id="pending-badge" style="display: none; background: var(--sell); color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer;" onclick="switchTabByName('portfolio')"></div>
             <button class="btn" onclick="refreshAllData()">Refresh</button>
             <button class="btn sell" onclick="window.location.href='/logout'">Logout</button>
         </div>
@@ -308,7 +309,7 @@
 </header>
 
 <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('portfolio')">Portfolio Today</button>
+    <button class="tab-btn active" id="tab-btn-portfolio" onclick="switchTab('portfolio')">Portfolio Today</button>
     <button class="tab-btn" onclick="switchTab('morning')">Morning Actions</button>
     <button class="tab-btn" onclick="switchTab('acquisitions')">Acquisition Pipeline</button>
     <button class="tab-btn" onclick="switchTab('alerts')">Alerts & Notifications</button>
@@ -323,6 +324,18 @@
 <!-- ==================== PORTFOLIO TODAY ==================== -->
 <div id="portfolio" class="section active">
     <div class="wrap">
+
+        <!-- Executive Brief Banner (time-of-day aware) -->
+        <div id="exec-brief-banner" class="research-header" style="margin-bottom: 20px;">
+            <div style="font-size: 16px; font-weight: 600; color: var(--tx); margin-bottom: 4px;" id="exec-brief-headline">Loading briefing...</div>
+            <div style="font-size: 13px; color: var(--tx2);" id="exec-brief-summary"></div>
+        </div>
+
+        <!-- Pending Approvals (only shown when trades are waiting on you) -->
+        <div id="pending-approvals-card" style="display: none; margin-bottom: 24px;">
+            <h2 style="color: var(--sell);">⏳ Awaiting Your Approval</h2>
+            <div id="pending-approvals-list"></div>
+        </div>
 
         <!-- KPIs -->
         <div class="kpis" id="kpis-row"></div>
@@ -746,16 +759,142 @@ function switchTab(tabName) {
     event.target.classList.add('active');
 }
 
+function switchTabByName(tabName) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(tabName).classList.add('active');
+    const btn = document.getElementById('tab-btn-' + tabName);
+    if (btn) btn.classList.add('active');
+}
+
+// Renders the time-aware Executive Brief banner: Morning Briefing (before ~11am),
+// Intraday Pulse (market hours), End of Day Recap (after ~4pm). Uses local browser
+// time as an approximation of ET since server timestamps are already ET-labeled.
+function renderExecBriefBanner(portfolioData, pendingCount) {
+    const hour = new Date().getHours();
+    let headline, icon;
+    if (hour < 11) {
+        icon = '🌅'; headline = 'Morning Briefing';
+    } else if (hour < 16) {
+        icon = '📊'; headline = 'Intraday Pulse';
+    } else {
+        icon = '🌙'; headline = 'End of Day Recap';
+    }
+
+    const kpis = portfolioData.portfolio.kpis;
+    const dayMove = kpis.today_pl >= 0 ? `up $${Math.abs(kpis.today_pl).toFixed(0)}` : `down $${Math.abs(kpis.today_pl).toFixed(0)}`;
+    const changesCount = portfolioData.recommendation_changes ? portfolioData.recommendation_changes.length : 0;
+
+    let summaryParts = [`Portfolio ${dayMove} today`, `$${(kpis.account_value/1000).toFixed(1)}k total`];
+    if (pendingCount > 0) summaryParts.push(`${pendingCount} trade${pendingCount > 1 ? 's' : ''} need your approval`);
+    if (changesCount > 0) summaryParts.push(`${changesCount} recommendation change${changesCount > 1 ? 's' : ''} vs yesterday`);
+
+    document.getElementById('exec-brief-headline').textContent = `${icon} ${headline}`;
+    document.getElementById('exec-brief-summary').textContent = summaryParts.join(' · ') + ` — as of ${portfolioData.portfolio.timestamp}`;
+}
+
+async function renderPendingApprovals() {
+    const data = await fetch('/api/pending-approvals').then(r => r.json()).catch(e => ({pending: [], count: 0}));
+    const pending = data.pending || [];
+
+    const badge = document.getElementById('pending-badge');
+    if (pending.length > 0) {
+        badge.style.display = 'block';
+        badge.textContent = `⏳ ${pending.length} pending`;
+    } else {
+        badge.style.display = 'none';
+    }
+
+    const card = document.getElementById('pending-approvals-card');
+    if (pending.length === 0) {
+        card.style.display = 'none';
+        return 0;
+    }
+    card.style.display = 'block';
+
+    const html = pending.map(p => `
+        <div class="card" style="border-left: 4px solid var(--hold);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+                <div style="flex: 1;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                        <span class="ticker" style="font-size: 15px;">${p.symbol}</span>
+                        <span class="action-badge ${p.action.toLowerCase().includes('sell') ? 'sell' : 'buy'}" style="margin-bottom: 0;">${p.action}</span>
+                        <span style="font-size: 12px; color: var(--tx3);">$${p.amount.toLocaleString('en-US', {maximumFractionDigits: 0})}</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--tx2); margin-bottom: 4px;">${p.reason}</div>
+                    <div style="font-size: 11px; color: var(--hold);">⚠ ${p.approval_reason}</div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                    <button class="btn" style="background: var(--buy); padding: 8px 14px;" onclick="approveTrade('${p.id}')">Approve</button>
+                    <button class="btn sell" style="padding: 8px 14px;" onclick="rejectTrade('${p.id}')">Reject</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    document.getElementById('pending-approvals-list').innerHTML = html;
+    return pending.length;
+}
+
+async function approveTrade(id) {
+    await fetch('/api/approve-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+    }).then(r => r.json());
+    refreshAllData();
+}
+
+async function rejectTrade(id) {
+    await fetch('/api/reject-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+    }).then(r => r.json());
+    refreshAllData();
+}
+
+async function renderTradeHistory() {
+    const data = await fetch('/api/trade-history').then(r => r.json()).catch(e => ({history: []}));
+    const history = data.history || [];
+    const tbody = document.getElementById('history-tbody');
+    if (!tbody) return;
+
+    if (history.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--tx3);">No trades executed yet</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = history.map(h => {
+        const isSell = h.action.includes('SELL');
+        const isRejected = h.action.startsWith('REJECTED');
+        const date = new Date(h.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        return `
+            <tr>
+                <td style="font-size: 11px;">${date}</td>
+                <td><span class="ticker">${h.symbol}</span></td>
+                <td><span style="padding: 3px 8px; border-radius: 3px; background: ${isRejected ? 'var(--tx3)' : (isSell ? 'var(--sell)' : 'var(--buy)')}; color: white; font-size: 11px; font-weight: 600;">${h.action}</span></td>
+                <td class="num">$${h.amount.toLocaleString('en-US', {maximumFractionDigits: 0})}</td>
+                <td class="num">${h.research_score ? h.research_score.toFixed(0) : 'N/A'}</td>
+                <td style="font-size: 12px; color: var(--tx2);">${h.reason}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
 async function refreshAllData() {
     const portfolio = await fetch('/api/portfolio-today').then(r => r.json());
     const research = await fetch('/api/research').then(r => r.json());
     const morning = await fetch('/api/morning-research').then(r => r.json()).catch(e => ({}));
 
+    const pendingCount = await renderPendingApprovals();
+    renderExecBriefBanner(portfolio, pendingCount);
     renderPortfolioToday(portfolio);
     renderResearch(research);
     renderMorningActions(morning);
     renderAcquisitionPipeline(morning);
     renderAlerts(morning);
+    renderTradeHistory();
     loadConfiguration();
 }
 
