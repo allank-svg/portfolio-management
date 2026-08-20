@@ -5,8 +5,11 @@ from datetime import datetime, timedelta
 import os
 from portfolio_analyzer import get_earnings_calendar, get_fair_value_models, get_options_flow, get_acquisition_candidates
 from research_engine import get_daily_research
-from portfolio_manager import get_portfolio_dashboard, get_yesterday_research, save_research_archive
-from trade_executor import TradeExecutor, TradeConfig
+from portfolio_manager import get_portfolio_dashboard, get_yesterday_research, save_research_archive, get_portfolio_performance
+from trade_executor import (
+    TradeExecutor, TradeConfig, load_pending_approvals,
+    approve_pending_trade, reject_pending_trade, load_trade_history
+)
 from config import HOLDINGS, CASH, SPY_ENTRY
 from robinhood_quotes import fetch_robinhood_quotes_live, load_quote_cache, get_quotes_with_metadata
  
@@ -107,6 +110,30 @@ def get_portfolio_data():
         },
         "alerts": alerts,
         "timestamp": datetime.now().strftime("%A %d %b %Y, %-I:%M %p ET"),
+    }
+ 
+def _serialize_pending(item):
+    """Pending trades come from two sources: TradeDecision objects (guardrail holds)
+    and raw dicts (acquisition candidates still waiting on cash). Normalize both
+    into one shape for the dashboard."""
+    if hasattr(item, 'symbol'):
+        return {
+            'symbol': item.symbol,
+            'action': item.action,
+            'amount': item.amount,
+            'score': item.research_score,
+            'upside': None,
+            'reason': item.reason,
+            'approval_reason': item.approval_reason
+        }
+    return {
+        'symbol': item.get('symbol'),
+        'action': 'BUY',
+        'amount': item.get('amount'),
+        'score': item.get('score'),
+        'upside': item.get('upside'),
+        'reason': item.get('reason'),
+        'approval_reason': 'Insufficient cash available'
     }
  
 @app.route("/", methods=["GET", "POST"])
@@ -282,9 +309,10 @@ def api_trade_decisions():
     except:
         quotes = {}
  
-    # Get research and portfolio
+    # Get research and portfolio (must use portfolio_manager's shape — 'position_value' etc —
+    # since that's what trade_executor.py's guardrail checks expect)
     today_research = get_daily_research()
-    portfolio = get_portfolio_data()
+    portfolio = get_portfolio_performance(quotes)
  
     # Generate trade decisions
     config = TradeConfig.load()
@@ -333,8 +361,8 @@ def api_morning_research():
     except:
         quotes = {}
  
-    # Get current portfolio
-    portfolio = get_portfolio_data()
+    # Get current portfolio (portfolio_manager's shape — matches what trade_executor.py expects)
+    portfolio = get_portfolio_performance(quotes)
  
     # Run research
     research = get_daily_research()
@@ -366,15 +394,7 @@ def api_morning_research():
                 'score': d.research_score
             } for d in executed_acquisitions
         ],
-        'acquisitions_pending': [
-            {
-                'symbol': d['symbol'],
-                'amount': d['amount'],
-                'score': d['score'],
-                'upside': d['upside'],
-                'reason': d['reason']
-            } for d in pending_acquisitions
-        ],
+        'acquisitions_pending': [_serialize_pending(d) for d in pending_acquisitions],
         'trades_executed': [
             {
                 'symbol': d.symbol,
@@ -433,6 +453,55 @@ def api_quotes_status():
         "source": metadata['source'],
         "note": "To enable live Robinhood quotes: (1) Set ROBINHOOD_API_KEY env var, (2) Uncomment API integration in robinhood_quotes.py"
     })
+ 
+@app.route("/api/pending-approvals")
+def api_pending_approvals():
+    """API endpoint: Trades currently awaiting your approval (persists across requests/hours)"""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    pending = load_pending_approvals()
+    return jsonify({
+        "pending": pending,
+        "count": len(pending)
+    })
+ 
+@app.route("/api/approve-trade", methods=["POST"])
+def api_approve_trade():
+    """API endpoint: Approve a pending trade — executes it and logs to trade history"""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+ 
+    approval_id = (request.json or {}).get("id")
+    if not approval_id:
+        return jsonify({"status": "error", "message": "Missing trade id"}), 400
+ 
+    entry, error = approve_pending_trade(approval_id)
+    if error:
+        return jsonify({"status": "error", "message": error}), 404
+    return jsonify({"status": "approved", "trade": entry})
+ 
+@app.route("/api/reject-trade", methods=["POST"])
+def api_reject_trade():
+    """API endpoint: Reject a pending trade — removes it from the queue"""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+ 
+    body = request.json or {}
+    approval_id = body.get("id")
+    if not approval_id:
+        return jsonify({"status": "error", "message": "Missing trade id"}), 400
+ 
+    entry, error = reject_pending_trade(approval_id, body.get("reason", ""))
+    if error:
+        return jsonify({"status": "error", "message": error}), 404
+    return jsonify({"status": "rejected", "trade": entry})
+ 
+@app.route("/api/trade-history")
+def api_trade_history():
+    """API endpoint: Permanent trade execution history (persists across restarts)"""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"history": load_trade_history()})
  
 @app.route("/logout")
 def logout():
