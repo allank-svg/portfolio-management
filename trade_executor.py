@@ -8,10 +8,150 @@ All trades logged with fundamental reasoning
 """
  
 import json
+import os
+import uuid
 from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+ 
+PENDING_FILE = "pending_approvals.json"
+TRADE_HISTORY_FILE = "trade_history.jsonl"
+ 
+# ==================== PERSISTENT PENDING APPROVALS ====================
+# These are module-level (not tied to a TradeExecutor instance) because each
+# Flask request creates a fresh TradeExecutor, so approvals must survive on disk.
+ 
+def load_pending_approvals():
+    """Load the current queue of trades awaiting your approval"""
+    if os.path.exists(PENDING_FILE):
+        try:
+            with open(PENDING_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+ 
+def _save_pending_approvals(pending_list):
+    with open(PENDING_FILE, "w") as f:
+        json.dump(pending_list, f, indent=2)
+ 
+def add_pending_approvals(new_decisions):
+    """
+    Add newly generated pending trades to the persistent queue.
+    Accepts a mix of TradeDecision objects and raw dicts (acquisition candidates
+    still waiting on cash). Dedupes by symbol+action+date so re-running research
+    hourly doesn't spam duplicate approval requests for the same signal.
+    """
+    existing = load_pending_approvals()
+    existing_keys = {(p['symbol'], p['action'], p['timestamp'][:10]) for p in existing}
+    added = 0
+ 
+    for d in new_decisions:
+        if hasattr(d, 'symbol'):
+            symbol, action, amount = d.symbol, d.action, d.amount
+            reason, score, timestamp = d.reason, d.research_score, d.timestamp
+            approval_reason = d.approval_reason or "Awaiting approval"
+        else:
+            symbol = d.get('symbol')
+            action = 'BUY'
+            amount = d.get('amount', 0)
+            reason = d.get('reason', '')
+            score = d.get('score', 0)
+            timestamp = datetime.now().isoformat()
+            approval_reason = "Insufficient cash available"
+ 
+        key = (symbol, action, timestamp[:10])
+        if key in existing_keys:
+            continue
+ 
+        existing.append({
+            'id': str(uuid.uuid4()),
+            'symbol': symbol,
+            'action': action,
+            'amount': amount,
+            'reason': reason,
+            'research_score': score,
+            'approval_reason': approval_reason,
+            'timestamp': timestamp,
+            'status': 'pending'
+        })
+        added += 1
+ 
+    if added:
+        _save_pending_approvals(existing)
+    return existing
+ 
+def remove_pending_approval(approval_id):
+    existing = load_pending_approvals()
+    existing = [p for p in existing if p['id'] != approval_id]
+    _save_pending_approvals(existing)
+ 
+def get_pending_approval(approval_id):
+    for p in load_pending_approvals():
+        if p['id'] == approval_id:
+            return p
+    return None
+ 
+def approve_pending_trade(approval_id):
+    """User approves a pending trade from the dashboard: execute + log + clear from queue"""
+    approval = get_pending_approval(approval_id)
+    if not approval:
+        return None, "Approval not found (it may have already been actioned)"
+ 
+    entry = {
+        'timestamp': datetime.now().isoformat(),
+        'symbol': approval['symbol'],
+        'action': approval['action'],
+        'amount': approval['amount'],
+        'reason': approval['reason'] + " [Approved by user]",
+        'research_score': approval['research_score']
+    }
+    log_trade_history(entry)
+    remove_pending_approval(approval_id)
+    return entry, None
+ 
+def reject_pending_trade(approval_id, reason=""):
+    """User rejects a pending trade: remove from queue, log the rejection for the record"""
+    approval = get_pending_approval(approval_id)
+    if not approval:
+        return None, "Approval not found (it may have already been actioned)"
+ 
+    entry = {
+        'timestamp': datetime.now().isoformat(),
+        'symbol': approval['symbol'],
+        'action': f"REJECTED_{approval['action']}",
+        'amount': approval['amount'],
+        'reason': approval['reason'] + (f" [Rejected: {reason}]" if reason else " [Rejected by user]"),
+        'research_score': approval['research_score']
+    }
+    log_trade_history(entry)
+    remove_pending_approval(approval_id)
+    return approval, None
+ 
+# ==================== PERSISTENT TRADE HISTORY ====================
+ 
+def log_trade_history(entry):
+    """Append an executed (or rejected) trade to the permanent history log"""
+    try:
+        with open(TRADE_HISTORY_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except:
+        pass
+ 
+def load_trade_history(limit=200):
+    """Load trade history, most recent first"""
+    history = []
+    if os.path.exists(TRADE_HISTORY_FILE):
+        try:
+            with open(TRADE_HISTORY_FILE, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        history.append(json.loads(line))
+        except:
+            pass
+    return list(reversed(history))[:limit]
  
 class TradeConfig:
     """User-settable trading parameters"""
@@ -54,7 +194,7 @@ class TradeConfig:
         }
  
     @staticmethod
-    def load(config_file="/home/claude/trade_config.json"):
+    def load(config_file="trade_config.json"):
         """Load config from file, or create default"""
         try:
             with open(config_file, "r") as f:
@@ -67,7 +207,7 @@ class TradeConfig:
         except:
             return TradeConfig()
  
-    def save(self, config_file="/home/claude/trade_config.json"):
+    def save(self, config_file="trade_config.json"):
         """Persist config to file"""
         with open(config_file, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
@@ -239,6 +379,10 @@ class TradeExecutor:
                     # Auto-execute
                     self._log_trade(decision)
                     executed.append(decision)
+                    self._send_notification(
+                        f"✅ AUTO-EXECUTED BUY: {symbol}",
+                        f"${decision.amount:,.0f} — {decision.reason}"
+                    )
  
             elif decision.action == 'SELL':
                 current_pos_val = holdings_map.get(symbol, {}).get('position_value', 0)
@@ -258,19 +402,28 @@ class TradeExecutor:
                     # Auto-execute
                     self._log_trade(decision)
                     executed.append(decision)
+                    self._send_notification(
+                        f"✅ AUTO-EXECUTED SELL: {symbol}",
+                        f"${decision.amount:,.0f} — {decision.reason}"
+                    )
+ 
+        if pending:
+            add_pending_approvals(pending)
  
         return executed, pending
  
     def _log_trade(self, decision):
-        """Log executed trade"""
-        self.trade_log.append({
+        """Log executed trade (in-memory for this request + permanent history file)"""
+        entry = {
             'timestamp': decision.timestamp,
             'symbol': decision.symbol,
             'action': decision.action,
             'amount': decision.amount,
             'reason': decision.reason,
             'research_score': decision.research_score
-        })
+        }
+        self.trade_log.append(entry)
+        log_trade_history(entry)
  
     def _is_today(self, timestamp_str):
         """Check if timestamp is from today"""
@@ -279,19 +432,8 @@ class TradeExecutor:
         return timestamp.date() == date.today()
  
     def get_pending_approvals(self):
-        """Get list of trades waiting for user approval"""
-        return self.pending_approvals
- 
-    def approve_trade(self, symbol, action):
-        """User approves a pending trade"""
-        # Remove from pending, log as executed
-        # Send confirmation email/notification
-        pass
- 
-    def reject_trade(self, symbol, action, reason=""):
-        """User rejects a pending trade"""
-        # Remove from pending, log as rejected
-        pass
+        """Get the persistent queue of trades waiting for user approval (survives across requests)"""
+        return load_pending_approvals()
  
     def evaluate_new_acquisitions(self, candidates, current_portfolio, portfolio_value):
         """
@@ -523,6 +665,9 @@ class TradeExecutor:
                     )
  
                     pending.append(rec)
+ 
+        if pending:
+            add_pending_approvals(pending)
  
         return executed, pending, alerts
  
